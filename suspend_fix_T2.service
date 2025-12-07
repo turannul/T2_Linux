@@ -1,0 +1,32 @@
+[Unit]
+Description=Reset Apple BCE Module (Fix Wi-Fi/BT/Touchbar on Wake)
+Before=sleep.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+ExecStart=/usr/bin/systemctl stop tiny-dfr.service
+ExecStart=/usr/sbin/modprobe -r appletbdrm
+ExecStart=/usr/sbin/modprobe -r hid_appletb_bl
+ExecStart=/usr/sbin/modprobe -r hid_appletb_kbd
+ExecStart=/usr/sbin/modprobe -r brcmfmac_wcc 
+ExecStart=/usr/sbin/modprobe -r brcmfmac 
+ExecStart=/usr/sbin/modprobe -r hci_bcm4377
+ExecStart=/usr/bin/rmmod --force apple-bce
+
+ExecStop=/usr/sbin/modprobe apple-bce
+ExecStop=/usr/bin/sleep 2
+ExecStop=/usr/sbin/modprobe hid_appletb_bl
+ExecStop=/usr/sbin/modprobe hid_appletb_kbd
+ExecStop=/usr/sbin/modprobe appletbdrm
+ExecStop=/usr/bin/sleep 0.5
+ExecStop=/usr/sbin/modprobe hci_bcm4377
+ExecStop=/usr/sbin/modprobe brcmfmac
+ExecStop=/usr/sbin/modprobe brcmfmac_wcc
+ExecStop=/usr/bin/sleep 1.5
+ExecStop=/usr/bin/systemctl start tiny-dfr.service
+
+[Install]
+WantedBy=sleep.target
