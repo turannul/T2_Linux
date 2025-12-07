@@ -8,25 +8,25 @@ Type=oneshot
 RemainAfterExit=yes
 
 ExecStart=/usr/bin/systemctl stop tiny-dfr.service
-ExecStart=/usr/sbin/modprobe -r appletbdrm
-ExecStart=/usr/sbin/modprobe -r hid_appletb_bl
-ExecStart=/usr/sbin/modprobe -r hid_appletb_kbd
-ExecStart=/usr/sbin/modprobe -r brcmfmac_wcc 
-ExecStart=/usr/sbin/modprobe -r brcmfmac 
-ExecStart=/usr/sbin/modprobe -r hci_bcm4377
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog appletbdrm
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog hid_appletb_bl
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog hid_appletb_kbd
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog brcmfmac_wcc 
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog brcmfmac 
+ExecStart=/usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog hci_bcm4377
 ExecStart=/usr/bin/rmmod --force apple-bce
 
-ExecStop=/usr/sbin/modprobe apple-bce
-ExecStop=/usr/bin/sleep 2
-ExecStop=/usr/sbin/modprobe hid_appletb_bl
-ExecStop=/usr/sbin/modprobe hid_appletb_kbd
-ExecStop=/usr/sbin/modprobe appletbdrm
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog apple-bce
+ExecStop=/usr/bin/sleep 3
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog hid_appletb_bl
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog hid_appletb_kbd
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog appletbdrm
 ExecStop=/usr/bin/sleep 0.5
-ExecStop=/usr/sbin/modprobe hci_bcm4377
-ExecStop=/usr/sbin/modprobe brcmfmac
-ExecStop=/usr/sbin/modprobe brcmfmac_wcc
-ExecStop=/usr/bin/sleep 1.5
 ExecStop=/usr/bin/systemctl start tiny-dfr.service
+ExecStop=/usr/bin/sleep 0.5
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog brcmfmac_wcc
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog brcmfmac
+ExecStop=/usr/sbin/modprobe --force --verbose --syslog hci_bcm4377
 
 [Install]
 WantedBy=sleep.target
