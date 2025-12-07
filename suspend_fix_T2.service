@@ -4,6 +4,7 @@ Before=sleep.target
 StopWhenUnneeded=yes
 
 [Service]
+User=root
 Type=oneshot
 RemainAfterExit=yes
 
