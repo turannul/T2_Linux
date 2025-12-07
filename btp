@@ -18,7 +18,7 @@ if [ "$new_brightness_level" -gt "$max_brightness" ]; then
 fi
 
 if [ -e "$brightness_path" ]; then
-    echo "$new_brightness_level" | sudo tee "$brightness_path"
+    echo "$new_brightness_level" | sudo tee "$brightness_path" > /dev/null
     printf "Brightness changed from %d to %d\n" "$current_brightness" "$new_brightness_level"
     exit 0
 else

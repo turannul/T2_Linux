@@ -23,7 +23,7 @@ fi
 new_brightness_level=$((max_brightness * new_percentage / 100))
 
 if [ -e "$brightness_path" ]; then
-    echo "$new_brightness_level" | sudo tee "$brightness_path"
+    echo "$new_brightness_level" | sudo tee "$brightness_path" > /dev/null
     printf "Brightness changed from %d%% (%d) to %d%% (%d)\n" "$current_percentage" "$current_brightness_raw" "$new_percentage" "$new_brightness_level"
     exit 0
 else
