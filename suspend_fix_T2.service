@@ -4,12 +4,11 @@ Before=sleep.target
 StopWhenUnneeded=yes
 
 [Service]
-User=root
 Type=oneshot
 RemainAfterExit=yes
 
-ExecStart=/usr/local/sbin/t2_drv unload
-ExecStop=/usr/local/sbin/t2_drv load
+ExecStart=/usr/local/sbin/suspendfix unload
+ExecStop=/usr/local/sbin/suspendfix load
 
 [Install]
 WantedBy=sleep.target
