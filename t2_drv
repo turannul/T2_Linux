@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+LOG_FILE="/tmp/suspend-fix-t2.log"
+
+function log() {
+	local LOG_LEVEL="$1"
+	local EVENT_MSG="$2"
+	local TIMESTAMP
+	TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+	local LEVEL_STR="INFO"
+
+	case "$LOG_LEVEL" in
+		"-") LEVEL_STR="CRITICAL" ;; 
+		"!") LEVEL_STR="ERROR" ;; 
+		"*") LEVEL_STR="WARNING" ;; 
+		"+") LEVEL_STR="INFO" ;; 
+		"#") LEVEL_STR="DEBUG" ;; 
+		*)   LEVEL_STR="INFO" ;; 
+	esac
+
+	echo "[$TIMESTAMP] [$LEVEL_STR] $EVENT_MSG" | sudo tee -a "$LOG_FILE"
+}
+
+function _load_module() {
+	MODULE_NAME="${1//-/_}"
+	DELAY="${2:-0.5}"
+
+	if lsmod | grep -q "^$MODULE_NAME\\s"; then
+		log "*" "Module $1 is already loaded."
+		return 0
+	fi
+
+	log "#" "Module $1 is not loaded. Loading..."
+	sudo /usr/sbin/modprobe --force --verbose --syslog "$1"
+	log "#" "Waiting ${DELAY}s for initialization..."
+	sleep "$DELAY"
+
+	if lsmod | grep -q "^$MODULE_NAME\\s"; then
+		log "+" "Module $1 loaded successfully."
+		return 0
+	fi
+
+	log "!" "Failed to load module $1."
+	return 1
+}
+
+function _unload_module() {
+	MODULE_NAME="${1//-/_}"
+
+	if ! lsmod | grep -q "^$MODULE_NAME\\s"; then
+		log "*" "Module $1 is not loaded, skipping."
+		return 0
+	fi
+
+	log "#" "Module $1 is loaded. Unloading..."
+	if [ "$1" == "apple-bce" ] || [ "$MODULE_NAME" == "apple_bce" ]; then
+		sudo /usr/sbin/rmmod --force "$1"
+	else
+		sudo /usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog "$1"
+	fi
+
+	if ! lsmod | grep -q "^$MODULE_NAME\\s"; then
+		log "+" "Module $1 unloaded successfully."
+		return 0
+	fi
+
+	log "!" "Failed to unload module $1."
+	return 1
+}
+
+function _stop_service() {
+	if /usr/bin/systemctl is-active --quiet "tiny-dfr.service"; then
+		log "+" "Stopping tiny-dfr.service..."
+		log "_" "###########################"
+		sudo /usr/bin/systemctl stop "tiny-dfr.service"
+	fi
+}
+
+function _start_service() {
+	if ! /usr/bin/systemctl is-active --quiet "tiny-dfr.service"; then
+		log "+" "Starting tiny-dfr.service..."
+		log "_" "###########################"
+		sudo /usr/bin/systemctl start "tiny-dfr.service"
+	else
+		log "_" "###########################"
+		log "#" "tiny-dfr is already running, Restarting..."
+		log "+" "Restarting tiny-dfr.service..."
+		log "_" "###########################"
+		sudo /usr/bin/systemctl restart "tiny-dfr.service"
+	fi
+}
+
+load() {
+	log "_" "###########################"
+	log "+" "Executing load sequence..."
+	log "_" "###########################"
+
+	_load_module apple-bce 3
+	_load_module hid_appletb_bl
+	_load_module hid_appletb_kbd
+	_load_module appletbdrm
+	_load_module brcmfmac_wcc
+	_load_module brcmfmac
+	_load_module hci_bcm4377
+	_start_service tiny-dfr.service
+}
+
+unload() {
+	log "_" "###########################"
+	log "+" "Executing unload sequence..."
+	log "_" "###########################"
+
+	_stop_service tiny-dfr.service
+	_unload_module appletbdrm
+	_unload_module hid_appletb_bl
+	_unload_module hid_appletb_kbd
+	_unload_module brcmfmac_wcc
+	_unload_module brcmfmac
+	_unload_module hci_bcm4377
+	_unload_module apple-bce
+}
+
+case "$1" in
+load)
+	load
+	;;
+unload)
+	unload
+	;;
+*)
+	echo "Usage: $0 load unload"
+	exit 1
+	;;
+esac
