@@ -7,9 +7,11 @@ brightness_path="$device_path/brightness"
 max_brightness=$(cat "$device_path/max_brightness")
 new_percentage=${brightness_input//%}
 
+#bkb: Brightness Keyboard Backlight
+
 if ! [[ "$new_percentage" =~ ^[0-9]+$ ]]; then
     echo "Error: Invalid brightness value provided. Please use a number (e.g., 50 or 50%)." >&2
-    echo "Usage: kbd-backlight <percentage>" >&2
+    echo "Usage: $0 <percentage>" >&2
     exit 1
 fi
 
