@@ -10,15 +10,27 @@ function log() {
 	local LEVEL_STR="INFO"
 
 	case "$LOG_LEVEL" in
-		"-") LEVEL_STR="CRITICAL" ;; 
-		"!") LEVEL_STR="ERROR" ;; 
-		"*") LEVEL_STR="WARNING" ;; 
-		"+") LEVEL_STR="INFO" ;; 
-		"#") LEVEL_STR="DEBUG" ;; 
-		*)   LEVEL_STR="INFO" ;; 
+	"-")
+		LEVEL_STR="CRITICAL"
+		;;
+	"!")
+		LEVEL_STR="ERROR"
+		;;
+	"*")
+		LEVEL_STR="WARNING"
+		;;
+	"+")
+		LEVEL_STR="INFO"
+		;;
+	"#")
+		LEVEL_STR="DEBUG"
+		;;
+	*)
+		LEVEL_STR="INFO"
+		;;
 	esac
 
-	echo "[$TIMESTAMP] [$LEVEL_STR] $EVENT_MSG" | sudo tee -a "$LOG_FILE"
+	echo "[$TIMESTAMP] [$LEVEL_STR] $EVENT_MSG" | tee -a "$LOG_FILE"
 }
 
 function _load_module() {
@@ -31,7 +43,7 @@ function _load_module() {
 	fi
 
 	log "#" "Module $1 is not loaded. Loading..."
-	sudo /usr/sbin/modprobe --force "$1"
+	/usr/sbin/modprobe --force "$1"
 	log "#" "Waiting ${DELAY}s for initialization..."
 	sleep "$DELAY"
 
@@ -54,9 +66,9 @@ function _unload_module() {
 
 	log "#" "Module $1 is loaded. Unloading..."
 	if [ "$1" == "apple-bce" ] || [ "$MODULE_NAME" == "apple_bce" ]; then
-		sudo /usr/sbin/rmmod --force "$1"
+		/usr/sbin/rmmod --force "$1"
 	else
-		sudo /usr/sbin/modprobe --force --remove --remove-holders "$1"
+		/usr/sbin/modprobe --force --remove --remove-holders "$1"
 	fi
 
 	if ! lsmod | grep -q "^$MODULE_NAME\\s"; then
@@ -72,7 +84,7 @@ function _stop_service() {
 	if /usr/bin/systemctl is-active --quiet "tiny-dfr.service"; then
 		log "+" "Stopping tiny-dfr.service..."
 		log "_" "###########################"
-		sudo /usr/bin/systemctl stop "tiny-dfr.service"
+		/usr/bin/systemctl stop "tiny-dfr.service"
 	fi
 }
 
@@ -80,13 +92,13 @@ function _start_service() {
 	if ! /usr/bin/systemctl is-active --quiet "tiny-dfr.service"; then
 		log "+" "Starting tiny-dfr.service..."
 		log "_" "###########################"
-		sudo /usr/bin/systemctl start "tiny-dfr.service"
+		/usr/bin/systemctl start "tiny-dfr.service"
 	else
 		log "_" "###########################"
 		log "#" "tiny-dfr is already running, Restarting..."
 		log "+" "Restarting tiny-dfr.service..."
 		log "_" "###########################"
-		sudo /usr/bin/systemctl restart "tiny-dfr.service"
+		/usr/bin/systemctl restart "tiny-dfr.service"
 	fi
 }
 
@@ -128,13 +140,17 @@ function reload() {
 
 case "$1" in
 load)
-	load;;
+	load
+	;;
 unload)
-	unload;;
+	unload
+	;;
 reload)
-	reload;;
-version|v)
-	echo "0.1";;
+	reload
+	;;
+version | v)
+	echo "0.1"
+	;;
 *)
 	echo "Usage: $0 load unload reload"
 	exit 1
