@@ -23,7 +23,7 @@ function log() {
 
 function _load_module() {
 	MODULE_NAME="${1//-/_}"
-	DELAY="${2:-0.5}"
+	DELAY="${2:-1}"
 
 	if lsmod | grep -q "^$MODULE_NAME\\s"; then
 		log "*" "Module $1 is already loaded."
@@ -31,7 +31,7 @@ function _load_module() {
 	fi
 
 	log "#" "Module $1 is not loaded. Loading..."
-	sudo /usr/sbin/modprobe --force --verbose --syslog "$1"
+	sudo /usr/sbin/modprobe --force "$1"
 	log "#" "Waiting ${DELAY}s for initialization..."
 	sleep "$DELAY"
 
@@ -56,7 +56,7 @@ function _unload_module() {
 	if [ "$1" == "apple-bce" ] || [ "$MODULE_NAME" == "apple_bce" ]; then
 		sudo /usr/sbin/rmmod --force "$1"
 	else
-		sudo /usr/sbin/modprobe --force --remove --remove-holders --verbose --syslog "$1"
+		sudo /usr/sbin/modprobe --force --remove --remove-holders "$1"
 	fi
 
 	if ! lsmod | grep -q "^$MODULE_NAME\\s"; then
