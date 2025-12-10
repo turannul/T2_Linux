@@ -90,7 +90,7 @@ function _start_service() {
 	fi
 }
 
-load() {
+function load() {
 	log "_" "###########################"
 	log "+" "Executing load sequence..."
 	log "_" "###########################"
@@ -105,7 +105,7 @@ load() {
 	_start_service tiny-dfr.service
 }
 
-unload() {
+function unload() {
 	log "_" "###########################"
 	log "+" "Executing unload sequence..."
 	log "_" "###########################"
@@ -120,15 +120,23 @@ unload() {
 	_unload_module apple-bce
 }
 
+function reload() {
+	unload
+	/usr/bin/sleep 10
+	load
+}
+
 case "$1" in
 load)
-	load
-	;;
+	load;;
 unload)
-	unload
-	;;
+	unload;;
+reload)
+	reload;;
+version|v)
+	echo "0.1";;
 *)
-	echo "Usage: $0 load unload"
+	echo "Usage: $0 load unload reload"
 	exit 1
 	;;
 esac
