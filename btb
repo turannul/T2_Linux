@@ -7,8 +7,10 @@ brightness_path="$device_path/brightness"
 max_brightness=$(cat "$device_path/max_brightness")
 
 # 0: off, 1: low, 2: full
+# btb: Brightness Touch Bar
+
 if ! [[ "$new_brightness_level" =~ ^[0-9]+$ ]]; then
-    echo "Usage: tb-backlight <brightness> [0-$max_brightness]" >&2
+    echo "Usage: $0 <brightness> [0-$max_brightness]" >&2
     exit 1
 fi
 
