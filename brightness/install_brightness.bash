@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-function install() {
-    scripts=(
-        brightness_common.sh
-        bdp
-        bkb
-        btb
-    )
+scripts=(
+    brightness_common.sh
+    bdp
+    bkb
+    btb
+)
 
+function install() {
     for script in "${scripts[@]}"; do
         sudo cp -v "$script" "/usr/local/bin/"
         sudo chmod -v +x "/usr/local/bin/$script"
@@ -15,13 +15,6 @@ function install() {
 }
 
 function uninstall() {
-    scripts=(
-        brightness_common.sh
-        bdp
-        bkb
-        btb
-    )
-
     for script in "${scripts[@]}"; do
         sudo rm -fv "/usr/local/bin/$script"
     done
