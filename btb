@@ -1,29 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-new_brightness_level="$1"
-device_path="/sys/class/backlight/appletb_backlight"
-current_brightness=$(cat "$device_path/actual_brightness")
-brightness_path="$device_path/brightness"
-max_brightness=$(cat "$device_path/max_brightness")
+source "$(dirname "$0")/brightness_common.sh"
 
-# 0: off, 1: low, 2: full
-# btb: Brightness Touch Bar
+device_paths=(
+    "/sys/class/backlight/appletb_backlight"
+)
 
-if ! [[ "$new_brightness_level" =~ ^[0-9]+$ ]]; then
-    echo "Usage: $0 <brightness> [0-$max_brightness]" >&2
+device_path=$(find_device_path "${device_paths[@]}")
+
+if [ -z "$device_path" ]; then
+    echo -e "${RED}Error: No suitable touchbar backlight device found.${RESET}" >&2
     exit 1
 fi
 
-if [ "$new_brightness_level" -gt "$max_brightness" ]; then
-    echo "Maximum brightness is $max_brightness." >&2
+percentage_input="$1"
+numeric_percentage=${percentage_input//%} # Remove % if present
+
+if ! [[ "$numeric_percentage" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: Invalid percentage value provided. Please use a number (e.g., 50 or 50%).${RESET}" >&2
+    echo -e "${YELLOW}Usage: $0 <percentage>${RESET}" >&2
     exit 1
 fi
 
-if [ -e "$brightness_path" ]; then
-    echo "$new_brightness_level" | sudo tee "$brightness_path" > /dev/null
-    printf "Brightness changed from %d to %d\n" "$current_brightness" "$new_brightness_level"
-    exit 0
-else
-    echo "Touchbar backlight device not found at $device_path." >&2
+if [ "$numeric_percentage" -lt 0 ] || [ "$numeric_percentage" -gt 100 ]; then
+    echo -e "${RED}Error: Percentage must be between 0 and 100.${RESET}" >&2
     exit 1
 fi
+
+raw_level=""
+if [ "$numeric_percentage" -eq 0 ]; then  # = 0
+    raw_level=0 # Off
+elif [ "$numeric_percentage" -ge 1 ] && [ "$numeric_percentage" -le 49 ]; then  # >1 - <49
+    raw_level=1 # Half brightness
+elif [ "$numeric_percentage" -ge 50 ] && [ "$numeric_percentage" -le 100 ]; then # >50 - <100
+    raw_level=2 # Full brightness
+fi
+
+apply_brightness_raw "$raw_level" "$device_path"
+exit $?
