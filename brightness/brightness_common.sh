@@ -1,12 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RESET='\033[0m'
 
-# Finds the first existing directory from the provided list
 find_device_path() {
     local paths=("${@}")
     for path in "${paths[@]}"; do
@@ -21,14 +19,12 @@ find_device_path() {
 apply_brightness_percentage() {
     local input="$1"
     local device_path="$2"
-    local brightness_source_file="$3" # 'actual_brightness' or 'brightness'
+    local brightness_source_file="$3"
 
-    # Default to actual_brightness if not specified
     if [ -z "$brightness_source_file" ]; then
         brightness_source_file="actual_brightness"
     fi
 
-    # Check if device path is valid
     if [ ! -d "$device_path" ]; then
         echo -e "${RED}Error: Device path '$device_path' does not exist.${RESET}" >&2
         return 1

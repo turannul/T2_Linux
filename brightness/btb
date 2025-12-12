@@ -14,7 +14,7 @@ if [ -z "$device_path" ]; then
 fi
 
 percentage_input="$1"
-numeric_percentage=${percentage_input//%} # Remove % if present
+numeric_percentage=${percentage_input//%}
 
 if ! [[ "$numeric_percentage" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: Invalid percentage value provided. Please use a number (e.g., 50 or 50%).${RESET}" >&2
@@ -28,12 +28,12 @@ if [ "$numeric_percentage" -lt 0 ] || [ "$numeric_percentage" -gt 100 ]; then
 fi
 
 raw_level=""
-if [ "$numeric_percentage" -eq 0 ]; then  # = 0
-    raw_level=0 # Off
-elif [ "$numeric_percentage" -ge 1 ] && [ "$numeric_percentage" -le 49 ]; then  # >1 - <49
-    raw_level=1 # Half brightness
-elif [ "$numeric_percentage" -ge 50 ] && [ "$numeric_percentage" -le 100 ]; then # >50 - <100
-    raw_level=2 # Full brightness
+if [ "$numeric_percentage" -eq 0 ]; then
+    raw_level=0
+elif [ "$numeric_percentage" -ge 1 ] && [ "$numeric_percentage" -le 49 ]; then
+    raw_level=1
+elif [ "$numeric_percentage" -ge 50 ] && [ "$numeric_percentage" -le 100 ]; then
+    raw_level=2
 fi
 
 apply_brightness_raw "$raw_level" "$device_path"
