@@ -77,7 +77,7 @@ function _unload_module() {
 
 	log "#" "Module $1 is loaded. Unloading..."
 	if [ "$1" == "apple-bce" ] || [ "$module_name" == "apple_bce" ]; then
-		$cmd_rmmod --force "$1"
+		$cmd_rmmod "$1"
 	else
 		$cmd_modprobe --remove --remove-holders "$1"
 	fi
@@ -131,7 +131,10 @@ function load() {
 	_load_module brcmfmac
 	_load_module hci_bcm4377
 	_start_service tiny-dfr.service
-	_start_service NetworkManager.service
+
+	log "#" "Rescanning PCI bus..."
+	echo 1 > /sys/bus/pci/rescan
+	_load_module thunderbolt
 }
 
 function unload() {
@@ -140,7 +143,17 @@ function unload() {
 	log "_" "###########################"
 
 	_stop_service tiny-dfr.service
-	_stop_service NetworkManager.service
+
+	# Unbind Audio to release apple-bce
+	log "#" "Unbinding Apple Audio device..."
+	echo "0000:02:00.3" > /sys/bus/pci/drivers/aaudio/unbind 2>/dev/null || true
+
+	if [ -d "/sys/bus/pci/devices/0000:06:00.0" ]; then
+		log "#" "Removing Thunderbolt Controller..."
+		echo 1 > /sys/bus/pci/devices/0000:06:00.0/remove
+	fi
+	_unload_module thunderbolt
+
 	_unload_module appletbdrm
 	_unload_module hid_appletb_bl
 	_unload_module hid_appletb_kbd
@@ -167,7 +180,7 @@ reload)
 	reload
 	;;
 version | v)
-	echo "0.2"
+	echo "0.2-1"
 	;;
 *)
 	echo "Usage: $0 load unload reload"
