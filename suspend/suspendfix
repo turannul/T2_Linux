@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-# Resolve commands
 cmd_date=$(command -v date)
 cmd_printf=$(command -v printf)
 cmd_tee=$(command -v tee)
@@ -79,14 +78,12 @@ function _unload_module() {
 	log "#" "Module $1 is loaded. Unloading..."
 	if [ "$1" == "apple-bce" ] || [ "$module_name" == "apple_bce" ]; then
 		$cmd_rmmod --force "$1"
-		$cmd_sleep "$delay"
-		log "#" "Waiting ${delay}s for deinitialization..."
-
 	else
 		$cmd_modprobe --remove --remove-holders "$1"
-		$cmd_sleep "$delay"
-		log "#" "Waiting ${delay}s for deinitialization..."
 	fi
+
+	log "#" "Waiting ${delay}s for deinitialization..."
+	$cmd_sleep "$delay"
 
 	if ! $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
 		log "+" "Module $1 unloaded successfully."
