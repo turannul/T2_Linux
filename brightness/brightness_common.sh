@@ -52,7 +52,7 @@ apply_brightness_percentage() {
     local current_percentage=$((current_raw * 100 / max_value))
     local new_level=$((max_value * new_percentage / 100))
 
-    echo "$new_level" | sudo tee "$target_path" > /dev/null
+    echo "$new_level" | tee "$target_path" > /dev/null
     printf "${GREEN}%d%% > %d%%${RESET}\n" "$current_percentage" "$new_percentage"
 }
 
@@ -86,6 +86,6 @@ apply_brightness_raw() {
         return 1
     fi
 
-    echo "$input" | sudo tee "$target_path" > /dev/null
+    echo "$input" | tee "$target_path" > /dev/null
     printf "${GREEN}%d > %d${RESET}\n" "$current_val" "$input"
 }
