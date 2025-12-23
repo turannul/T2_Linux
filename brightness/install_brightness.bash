@@ -10,7 +10,7 @@ scripts=(
 install_dir="/usr/local/bin"
 exception_file="/etc/sudoers.d/00-sudo-rule-brightness-control"
 
-install_sudo_exception() {
+function install_sudo_exception() {
     actual_user=${SUDO_USER:-$USER}
     echo "Creating sudoers exception... for user: $actual_user"
     cat <<EOF | sudo tee "$exception_file" > /dev/null
@@ -27,13 +27,13 @@ EOF
     echo "Sudoers exception creation complete. || Commands should not require a password now."
 }
 
-uninstall_sudo_exception() {
+function uninstall_sudo_exception() {
     if [ -f "$exception_file" ]; then
         sudo rm -fv "$exception_file"
     fi
 }
 
-install() {
+function install() {
     for script in "${scripts[@]}"; do
         if [ -f "$script" ]; then
             sudo cp -v "$script" "$install_dir/"
@@ -47,7 +47,7 @@ install() {
     echo "Installation complete."
 }
 
-uninstall() {
+function uninstall() {
     for script in "${scripts[@]}"; do
         sudo rm -fv "$install_dir/$script"
     done
