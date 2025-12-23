@@ -9,6 +9,7 @@ source "$(dirname "$0")/brightness_common.sh"
 device_paths=(
     "/sys/class/leds/apple::kbd_backlight"
     "/sys/class/leds/smc::kbd_backlight"
+    # Feel free to add more paths here if needed
 )
 
 device_path=$(find_device_path "${device_paths[@]}")

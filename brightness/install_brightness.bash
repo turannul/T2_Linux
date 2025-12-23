@@ -1,58 +1,63 @@
 #!/usr/bin/env bash
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$(command -v "$0")" "$@"
+fi
+
 scripts=(
-    brightness_common.sh
-    bdp
-    bkb
-    btb
+    "brightness_common.sh"
+    "bdp"
+    "bkb"
+    "btb"
 )
 
 install_dir="/usr/local/bin"
-exception_file="/etc/sudoers.d/00-sudo-rule-brightness-control"
+exception_file="/etc/sudoers.d/0-brightness-control"
 
 function install_sudo_exception() {
+    [ -f "$exception_file" ] && sudo rm -fv "$exception_file"
     actual_user=${SUDO_USER:-$USER}
     echo "Creating sudoers exception... for user: $actual_user"
-    cat <<EOF | sudo tee "$exception_file" > /dev/null
-$actual_user ALL=(ALL) NOPASSWD: $install_dir/bdp
-$actual_user ALL=(ALL) NOPASSWD: $install_dir/btb
-$actual_user ALL=(ALL) NOPASSWD: $install_dir/bkb
-$actual_user ALL=(ALL) NOPASSWD: $install_dir/brightness_common.sh
+    cat <<EOF | tee "$exception_file" > /dev/null
+${SUDO_USER:-$USER} ALL=NOPASSWD: $install_dir/bdp
+${SUDO_USER:-$USER} ALL=NOPASSWD: $install_dir/btb
+${SUDO_USER:-$USER} ALL=NOPASSWD: $install_dir/bkb
+${SUDO_USER:-$USER} ALL=NOPASSWD: $install_dir/brightness_common.sh
 EOF
 
-    sudo chmod 0440 "$exception_file"
+    chmod -v 0440 "$exception_file"
     for script in "${scripts[@]}"; do
-        sudo -l | grep -q "$install_dir/$script" && echo "Sudoers exception added for $script." || echo "Failed to add sudoers exception for $script"
+        sudo -U "$actual_user" -l | grep -q "$install_dir/$script" && echo "Password exception added for $script." || echo "Failed to add password exception for $script"
     done
-    echo "Sudoers exception creation complete. || Commands should not require a password now."
+    echo "Password exception created successfully. || Commands should not require a password now."
 }
 
 function uninstall_sudo_exception() {
     if [ -f "$exception_file" ]; then
-        sudo rm -fv "$exception_file"
+        rm -fv "$exception_file"
     fi
 }
 
 function install() {
     for script in "${scripts[@]}"; do
         if [ -f "$script" ]; then
-            sudo cp -v "$script" "$install_dir/"
-            sudo chmod -v 755 "$install_dir/$script"
-            sudo chown -v root:root "$install_dir/$script"
+            cp -v "$script" "$install_dir/"
+            chmod -v 755 "$install_dir/$script"
+            chown -v root:root "$install_dir/$script"
         else
             echo "Warning: $script not found in current directory."
         fi
     done
     install_sudo_exception
-    echo "Installation complete."
+    echo "Installed successfully."
 }
 
 function uninstall() {
     for script in "${scripts[@]}"; do
-        sudo rm -fv "$install_dir/$script"
+        rm -fv "$install_dir/$script"
     done
     uninstall_sudo_exception
-    echo "Uninstallation complete."
+    echo "Uninstalled successfully."
 }
 
 case "$1" in

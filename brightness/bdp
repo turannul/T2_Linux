@@ -9,6 +9,7 @@ source "$(dirname "$0")/brightness_common.sh"
 device_paths=(
     "/sys/class/backlight/intel_backlight"
     "/sys/class/backlight/acpi_video0"
+    # Feel free to add more paths here if needed
 )
 
 device_path=$(find_device_path "${device_paths[@]}")
