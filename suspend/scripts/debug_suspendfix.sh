@@ -24,7 +24,7 @@ log "Driver for Audio (02:00.3): $(readlink -f /sys/bus/pci/devices/0000:02:00.3
 log "Driver for Bridge (02:00.1): $(readlink -f /sys/bus/pci/devices/0000:02:00.1/driver 2>/dev/null)"
 
 log "--- Executing Unload ---"
-sudo "$SUSPEND_FIX" unload >> "$LOG_FILE" 2>&1
+sudo "$SUSPEND_FIX" unload | sudo tee -a "$LOG_FILE" 2>&1
 
 log "--- Post-Unload State ---"
 log "apple-bce Refcount: $(cat /sys/module/apple_bce/refcnt 2>/dev/null)"
@@ -42,6 +42,6 @@ else
 fi
 
 log "--- Executing Load ---"
-sudo "$SUSPEND_FIX" load >> "$LOG_FILE" 2>&1
+sudo "$SUSPEND_FIX" load | sudo tee -a "$LOG_FILE" 2>&1
 
 log "Debugging Complete. Report saved to $LOG_FILE"

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$(command -v "$0")" "$@"
+fi
+
 cmd_date=$(command -v date)
 cmd_printf=$(command -v printf)
 cmd_tee=$(command -v tee)
@@ -10,7 +14,7 @@ cmd_sleep=$(command -v sleep)
 cmd_rmmod=$(command -v rmmod)
 cmd_systemctl=$(command -v systemctl)
 
-log_file="/tmp/suspend-fix-t2.log"
+log_file="$HOME/.cache/suspend-fix-t2.log"
 
 function log() {
 	local log_level="$1"
@@ -45,7 +49,7 @@ function log() {
 
 function _load_module() {
 	module_name="${1//-/_}"
-	delay="${2:-0.5}"
+	delay="${2:-0.5}"| 
 
 	if $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
 		log "*" "Module $1 is already loaded."
@@ -124,12 +128,12 @@ function load() {
 	log "_" "###########################"
 
 	_load_module apple-bce 4
-	_load_module hid_appletb_bl
-	_load_module hid_appletb_kbd
-	_load_module appletbdrm
-	_load_module brcmfmac_wcc
-	_load_module brcmfmac
-	_load_module hci_bcm4377
+	_load_module hid_appletb_bl 0.5
+	_load_module hid_appletb_kbd 0.5
+	_load_module appletbdrm 0.5
+	_load_module brcmfmac_wcc 1
+	_load_module brcmfmac 0.5
+	_load_module hci_bcm4377 1
 	_start_service tiny-dfr.service
 
 	log "#" "Rescanning PCI bus..."
