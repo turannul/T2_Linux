@@ -49,7 +49,7 @@ function log() {
 
 function _load_module() {
 	module_name="${1//-/_}"
-	delay="${2:-0.5}"| 
+	delay="${2:-0.5}"
 
 	if $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
 		log "*" "Module $1 is already loaded."
@@ -109,16 +109,23 @@ function _stop_service() {
 
 function _start_service() {
 	service_name=$1
+	wait_arg="${2:-wait}"
+
+	ctl_args=""
+	if [ "$wait_arg" == "no-wait" ]; then
+		ctl_args="--no-block"
+	fi
+
 	if ! $cmd_systemctl is-active --quiet "$service_name"; then
 		log "+" "Starting $service_name..."
 		log "_" "###########################"
-		$cmd_systemctl start "$service_name"
+		$cmd_systemctl start $ctl_args "$service_name"
 	else
 		log "_" "###########################"
 		log "#" "$service_name is already running, Restarting..."
 		log "+" "Restarting $service_name..."
 		log "_" "###########################"
-		$cmd_systemctl restart "$service_name"
+		$cmd_systemctl restart $ctl_args "$service_name"
 	fi
 }
 
@@ -134,7 +141,7 @@ function load() {
 	_load_module brcmfmac_wcc 1
 	_load_module brcmfmac 0.5
 	_load_module hci_bcm4377 1
-	_start_service tiny-dfr.service
+	_start_service tiny-dfr.service no-wait
 
 	log "#" "Rescanning PCI bus..."
 	echo 1 > /sys/bus/pci/rescan
