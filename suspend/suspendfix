@@ -170,7 +170,7 @@ function unload() {
 	_unload_module hid_appletb_kbd
 	_unload_module brcmfmac_wcc
 	_unload_module brcmfmac
-	_unload_module hci_bcm4377
+	_unload_module hci_bcm4377 2
 	_unload_module apple-bce 4
 }
 
