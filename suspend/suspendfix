@@ -210,7 +210,7 @@ function unload() {
 
 function reload() {
 	unload
-	$cmd_sleep 5
+	$cmd_sleep 10
 	load
 }
 
