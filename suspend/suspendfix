@@ -138,8 +138,8 @@ function load() {
 	_load_module hid_appletb_bl 0.5
 	_load_module hid_appletb_kbd 0.5
 	_load_module appletbdrm 0.5
-	_load_module brcmfmac_wcc 2
 	_load_module brcmfmac 1
+	_load_module brcmfmac_wcc 2
 	_load_module hci_bcm4377 1
 	_start_service tiny-dfr.service no-wait
 
@@ -168,9 +168,9 @@ function unload() {
 	_unload_module appletbdrm
 	_unload_module hid_appletb_bl
 	_unload_module hid_appletb_kbd
+	_unload_module hci_bcm4377 2
 	_unload_module brcmfmac_wcc 2
 	_unload_module brcmfmac 2
-	_unload_module hci_bcm4377 2
 	_unload_module apple-bce 4
 }
 
