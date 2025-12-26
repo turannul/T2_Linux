@@ -129,22 +129,67 @@ function _start_service() {
 	fi
 }
 
+function _rescan_PCI() {
+	log "#" "Rescanning PCI bus..."
+	if echo 1 > /sys/bus/pci/rescan; then
+		log "+" "PCI rescan triggered successfully."
+	else
+		log "!" "Failed to trigger PCI rescan."
+	fi
+}
+
+function _unbind_device() {
+	local device_id="$1"
+	local device_name="${2:-device $device_id}"
+	local unbind_path="/sys/bus/pci/devices/$device_id/driver/unbind"
+
+	if [ -w "$unbind_path" ]; then
+		log "#" "Unbinding $device_name..."
+		if echo "$device_id" > "$unbind_path" 2>/dev/null; then
+			if [ ! -e "/sys/bus/pci/devices/$device_id/driver" ]; then
+				log "+" "Unbound $device_name successfully."
+				return 0
+			fi
+		fi
+		log "!" "Failed to unbind $device_name."
+	else
+		log "*" "$device_name is not bound or not found."
+	fi
+}
+
+function _remove_device() {
+	local device_id="$1"
+	local device_name="${2:-device $device_id}"
+	local remove_path="/sys/bus/pci/devices/$device_id/remove"
+
+	if [ -w "$remove_path" ]; then
+		log "#" "Removing $device_name..."
+		if echo 1 > "$remove_path" 2>/dev/null; then
+			if [ ! -e "/sys/bus/pci/devices/$device_id" ]; then
+				log "+" "Removed $device_name successfully."
+				return 0
+			fi
+		fi
+		log "!" "Failed to remove $device_name."
+	else
+		log "*" "$device_name not found, skipping removal."
+	fi
+}
+
 function load() {
 	log "_" "###########################"
 	log "+" "Executing load sequence..."
 	log "_" "###########################"
 
 	_load_module apple-bce 4
-	_load_module hid_appletb_bl 0.5
-	_load_module hid_appletb_kbd 0.5
-	_load_module appletbdrm 0.5
+	_load_module hid_appletb_bl
+	_load_module hid_appletb_kbd
+	_load_module appletbdrm
 	_load_module brcmfmac 1
 	_load_module brcmfmac_wcc 2
 	_load_module hci_bcm4377 1
 	_start_service tiny-dfr.service no-wait
-
-	log "#" "Rescanning PCI bus..."
-	echo 1 > /sys/bus/pci/rescan
+	_rescan_PCI
 	_load_module thunderbolt
 }
 
@@ -156,13 +201,9 @@ function unload() {
 	_stop_service tiny-dfr.service
 
 	# Unbind Audio to release apple-bce
-	log "#" "Unbinding Apple Audio device..."
-	echo "0000:02:00.3" > /sys/bus/pci/drivers/aaudio/unbind 2>/dev/null || true
-
-	if [ -d "/sys/bus/pci/devices/0000:06:00.0" ]; then
-		log "#" "Removing Thunderbolt Controller..."
-		echo 1 > /sys/bus/pci/devices/0000:06:00.0/remove
-	fi
+	_unbind_device "0000:02:00.3" "Apple Audio device"
+	# Remove Thunderbolt Controller
+	_remove_device "0000:06:00.0" "Thunderbolt Controller"
 	_unload_module thunderbolt
 
 	_unload_module appletbdrm
