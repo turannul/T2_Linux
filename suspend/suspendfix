@@ -25,15 +25,12 @@ function log() {
 
 	case "$log_level" in
 	"-")
-		level_str="CRITICAL"
-		;;
-	"!")
 		level_str="ERROR"
 		;;
-	"*")
+	"!")
 		level_str="WARNING"
 		;;
-	"+")
+	"*")
 		level_str="INFO"
 		;;
 	"#")
@@ -52,21 +49,21 @@ function _load_module() {
 	delay="${2:-0.5}"
 
 	if $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
-		log "*" "Module $1 is already loaded."
+		log "!" "Module $1 is already loaded."
 		return 0
 	fi
 
-	log "#" "Module $1 is not loaded. Loading..."
+	log "*" "Module $1 is not loaded. Loading..."
 	$cmd_modprobe "$1"
-	log "#" "Waiting ${delay}s for initialization..."
+	log "*" "Waiting ${delay}s for initialization..."
 	$cmd_sleep "$delay"
 
 	if $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
-		log "+" "Module $1 loaded successfully."
+		log "*" "Module $1 loaded successfully."
 		return 0
 	fi
 
-	log "!" "Failed to load module $1."
+	log "-" "Failed to load module $1."
 	return 1
 }
 
@@ -75,34 +72,33 @@ function _unload_module() {
 	delay="${2:-0.5}"
 
 	if ! $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
-		log "*" "Module $1 is not loaded, skipping."
+		log "!" "Module $1 is not loaded, skipping."
 		return 0
 	fi
 
-	log "#" "Module $1 is loaded. Unloading..."
+	log "*" "Module $1 is loaded. Unloading..."
 	if [ "$1" == "apple-bce" ] || [ "$module_name" == "apple_bce" ]; then
 		$cmd_rmmod "$1"
 	else
 		$cmd_modprobe --remove --remove-holders "$1"
 	fi
 
-	log "#" "Waiting ${delay}s for deinitialization..."
+	log "*" "Waiting ${delay}s for deinitialization..."
 	$cmd_sleep "$delay"
 
 	if ! $cmd_lsmod | $cmd_grep -q "^$module_name\\s"; then
-		log "+" "Module $1 unloaded successfully."
+		log "*" "Module $1 unloaded successfully."
 		return 0
 	fi
 
-	log "!" "Failed to unload module $1."
+	log "-" "Failed to unload module $1."
 	return 1
 }
 
 function _stop_service() {
 	service_name=$1
 	if $cmd_systemctl is-active --quiet "$service_name"; then
-		log "+" "Stopping $service_name..."
-		log "_" "###########################"
+		log "*" "Stopping $service_name..."
 		$cmd_systemctl stop "$service_name"
 	fi
 }
@@ -117,24 +113,21 @@ function _start_service() {
 	fi
 
 	if ! $cmd_systemctl is-active --quiet "$service_name"; then
-		log "+" "Starting $service_name..."
-		log "_" "###########################"
+		log "*" "Starting $service_name..."
 		$cmd_systemctl start $ctl_args "$service_name"
 	else
-		log "_" "###########################"
-		log "#" "$service_name is already running, Restarting..."
-		log "+" "Restarting $service_name..."
-		log "_" "###########################"
+		log "*" "$service_name is already running, Restarting..."
+		log "*" "Restarting $service_name..."
 		$cmd_systemctl restart $ctl_args "$service_name"
 	fi
 }
 
 function _rescan_PCI() {
-	log "#" "Rescanning PCI bus..."
+	log "*" "Rescanning PCI bus..."
 	if echo 1 > /sys/bus/pci/rescan; then
-		log "+" "PCI rescan triggered successfully."
+		log "*" "PCI rescan triggered successfully."
 	else
-		log "!" "Failed to trigger PCI rescan."
+		log "-" "Failed to trigger PCI rescan."
 	fi
 }
 
@@ -144,16 +137,16 @@ function _unbind_device() {
 	local unbind_path="/sys/bus/pci/devices/$device_id/driver/unbind"
 
 	if [ -w "$unbind_path" ]; then
-		log "#" "Unbinding $device_name..."
+		log "*" "Unbinding $device_name..."
 		if echo "$device_id" > "$unbind_path" 2>/dev/null; then
 			if [ ! -e "/sys/bus/pci/devices/$device_id/driver" ]; then
-				log "+" "Unbound $device_name successfully."
+				log "*" "Unbound $device_name successfully."
 				return 0
 			fi
 		fi
-		log "!" "Failed to unbind $device_name."
+		log "-" "Failed to unbind $device_name."
 	else
-		log "*" "$device_name is not bound or not found."
+		log "!" "$device_name is not bound or not found."
 	fi
 }
 
@@ -163,22 +156,22 @@ function _remove_device() {
 	local remove_path="/sys/bus/pci/devices/$device_id/remove"
 
 	if [ -w "$remove_path" ]; then
-		log "#" "Removing $device_name..."
+		log "*" "Removing $device_name..."
 		if echo 1 > "$remove_path" 2>/dev/null; then
 			if [ ! -e "/sys/bus/pci/devices/$device_id" ]; then
-				log "+" "Removed $device_name successfully."
+				log "*" "Removed $device_name successfully."
 				return 0
 			fi
 		fi
-		log "!" "Failed to remove $device_name."
+		log "-" "Failed to remove $device_name."
 	else
-		log "*" "$device_name not found, skipping removal."
+		log "!" "$device_name not found, skipping removal."
 	fi
 }
 
 function load() {
 	log "_" "###########################"
-	log "+" "Executing load sequence..."
+	log "*" "Executing load sequence..."
 	log "_" "###########################"
 
 	_load_module apple-bce 4
@@ -195,7 +188,7 @@ function load() {
 
 function unload() {
 	log "_" "###########################"
-	log "+" "Executing unload sequence..."
+	log "*" "Executing unload sequence..."
 	log "_" "###########################"
 
 	_stop_service tiny-dfr.service
