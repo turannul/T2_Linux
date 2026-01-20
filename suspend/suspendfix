@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 if [ "$EUID" -ne 0 ]; then
-	exec sudo "$(command -v \"$0\")" "$@"
+    exec sudo "$(command -v "$0")" "$@"
 fi
 
 cmd_date=$(command -v date)
@@ -23,7 +23,7 @@ if [ -n "$target_user" ]; then
 	target_UID=$($cmd_id -u "$target_user")
 fi
 
-log_file="$HOME/.cache/suspend-fix-t2.log"
+log_file="/var/log/suspend-fix-t2.log"
 
 function log() {
 	local log_level="$1"
@@ -234,8 +234,8 @@ function unload() {
 	log "*" "PHASE 1: Stop Services"
 	# Stop audio first to release drivers
 	_stop_service wireplumber.service user
-	_stop_service pipewire.service user
 	_stop_service pipewire.socket user
+	_stop_service pipewire.service user
 	_stop_service tiny-dfr.service
 
 	log "*" "PHASE 2: Hardware Teardown (Thunderbolt)"
