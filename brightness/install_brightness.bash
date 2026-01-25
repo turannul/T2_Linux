@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+#
+#  install_brightness.bash
+#  T2_Linux
+#
+#  Created by turannul on 12/12/2025.
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; version 2 of the License.
+#
+#  See the LICENSE file for more details.
 
 if [ "$EUID" -ne 0 ]; then
     exec sudo "$(command -v "$0")" "$@"
