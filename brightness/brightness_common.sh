@@ -11,10 +11,10 @@
 #
 #  See the LICENSE file for more details.
 
-color_red='\033[0;31m'
-color_green='\033[0;32m'
-color_yellow='\033[1;33m'
-color_reset='\033[0m'
+color_red=$'\033[0;31m'
+color_green=$'\033[0;32m'
+color_yellow=$'\033[1;33m'
+color_reset=$'\033[0m'
 
 # --- Exit Codes ---
 exit_success=0
