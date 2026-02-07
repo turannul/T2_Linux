@@ -50,31 +50,17 @@ patterns: list[str] = [
 ]
 
 
-def _exec_cmd(command: str) -> bool:
-    """Execute a shell command and return success status."""
-    try:
-        _log("#", f"Executing: {command}")
-        stdout, stderr, code = t2.execute_command(command)
-        if code != 0:
-            _log("!", f"Command failed (Code {code}): {command}")
-            return False
-        return True
-    except Exception as e:
-        _log("!", f"Command failed with error: {e}")
-        return False
-
-
 def _unload() -> bool:
     try:
         _log("+", "STAGE 1: Unloading...")
         # stop service first then, unload driver.
         for s in reversed(services):
             _log("+", f"Stopping Service: {s}")
-            _exec_cmd(f"systemctl stop {s}")
+            t2.execute_command(f"systemctl stop {s}")
         for m in reversed(modules):
             _log("+", f"Unloading module {m}...")
             # using --remove-holders to be safe, similar to modprobe --remove
-            _exec_cmd(f"modprobe --verbose --remove --remove-holders {m}")
+            t2.execute_command(f"modprobe --verbose --remove --remove-holders {m}")
         # unloaded waiting hw to power off. (5 seconds)
         time.sleep(5)
         return True
@@ -89,10 +75,10 @@ def _load() -> bool:
         # load driver first then, [re]start service
         for m in modules:
             _log("+", f"Loading module {m}...")
-            _exec_cmd(f"modprobe --verbose {m}")
+            t2.execute_command(f"modprobe --verbose {m}")
         for s in services:
             _log("+", f"Starting Service: {s}")
-            _exec_cmd(f"systemctl start {s}")
+            t2.execute_command(f"systemctl start {s}")
         return True
     except Exception as err:
         _log("-", f"Load unsucessful: {err}")

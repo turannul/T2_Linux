@@ -18,7 +18,7 @@ import os
 import subprocess
 import sys
 import time
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple
 
 # Prevent __pycache__ creation
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -32,7 +32,7 @@ except ImportError:
     import t2
 
 # constants
-version = "0.5.4"
+version = "0.5.5-1"
 # initialize global logger
 logger = t2.setup_logging("SuspendFix", level=logging.DEBUG)
 
@@ -60,7 +60,7 @@ target_user, target_uid = get_active_user()
 
 
 def run_cmd_wrapper(cmd: List[str], as_user: bool = False) -> Tuple[str, str, int]:
-    """Wrapper to run commands, optionally as the active user with preserved environment."""
+    """Wrapper to run commands, optionally as the active user (uid: 1000) with preserved environment."""
     cmd_str = " ".join(cmd)
     env = os.environ.copy()
 
@@ -97,7 +97,7 @@ def load_module(module_name: str, delay: float = 0.5) -> bool:
 
     _log("*", f"Loading module {module_name}...")
     for attempt in range(1, 4):
-        _, stderr, code = t2.execute_command(f"modprobe --verbose {module_name}")
+        _, _, code = t2.execute_command(f"modprobe --verbose {module_name}")
         if code == 0:
             _log("*", f"Module {module_name} loaded (Attempt {attempt}).")
             time.sleep(delay)
@@ -221,12 +221,6 @@ def remove_device(device_id: str, name: Optional[str] = None) -> bool:
 
 def load_sequence() -> None:
     _log("*", "Executing LOAD sequence...")
-    
-    # Pre-checks (Debug info only)
-    run_cmd_wrapper(["systemctl", "--user", "is-active", "pipewire.socket"], as_user=True)
-    run_cmd_wrapper(["systemctl", "--user", "is-active", "wireplumber.service"], as_user=True)
-    run_cmd_wrapper(["systemctl", "--user", "is-active", "pipewire.service"], as_user=True)
-
     load_module("apple-bce", 4)
     load_module("hid_appletb_bl")
     load_module("hid_appletb_kbd")
@@ -241,6 +235,7 @@ def load_sequence() -> None:
     start_service("NetworkManager", block=True, as_user=False)
     start_service("bluetooth.service", block=True, as_user=False)
     start_service("tiny-dfr.service", block=False, as_user=False)
+    start_service("wluma.service", block=False, as_user=True)
     _log("*", "LOAD sequence complete.")
 
 

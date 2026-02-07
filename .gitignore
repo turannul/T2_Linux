@@ -1,2 +1,8 @@
 .vscode/settings.json
 *.pyc
+__pycache__/
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/

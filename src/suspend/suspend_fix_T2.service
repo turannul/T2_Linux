@@ -7,8 +7,8 @@ StopWhenUnneeded=yes
 Type=oneshot
 RemainAfterExit=yes
 
-ExecStart=/usr/bin/python3 /usr/local/sbin/suspendfix unload ## SERVICES MUST START WITH PYTHON3 PREFIX
-ExecStop=/usr/bin/python3 /usr/local/sbin/suspendfix load ## SERVICES MUST START WITH PYTHON3 PREFIX
+ExecStart=/usr/bin/python3 /usr/local/sbin/suspendfix unload
+ExecStop=/usr/bin/python3 /usr/local/sbin/suspendfix load
 
 [Install]
 WantedBy=sleep.target

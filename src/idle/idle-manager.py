@@ -17,12 +17,12 @@ import os
 import re
 import subprocess
 import sys
+from gi.repository import Gio, GLib  # type: ignore
 
 # Prevent __pycache__ creation
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.dont_write_bytecode = True
 
-from gi.repository import Gio, GLib  # type: ignore
 
 try:
     import t2
@@ -123,17 +123,9 @@ def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
     return subprocess.Popen(prefix + cmd_list)
 
 
-def run_cmd(cmd, shell=True) -> str:
-    # shell argument is ignored as execute_command always uses shell
-    stdout, stderr, code = t2.execute_command(cmd)
-    if code != 0:
-        _log("-", f"Error running '{cmd}': {stderr}")
-    return stdout
-
-
 # --- State ---
 def save_power_profile() -> None:
-    curr: str = run_cmd("powerprofilesctl get")
+    curr, _, _ = t2.execute_command("powerprofilesctl get")
     if curr and curr != "power-saver":
         os.makedirs(state_dir, exist_ok=True)
         with open(power_profile_state, "w") as f:
@@ -145,11 +137,11 @@ def restore_power_profile() -> None:
     if os.path.exists(power_profile_state):
         with open(power_profile_state, "r") as f:
             profile = f.read().strip() or "balanced"
-    run_cmd(f"qs -c noctalia-shell ipc call powerProfile set {profile}")
+    t2.execute_command(f"qs -c noctalia-shell ipc call powerProfile set {profile}")
 
 
 def save_bkb() -> None:
-    curr: str = run_cmd("bkb -s")
+    curr, _, _ = t2.execute_command("bkb -s")
     if curr and curr != "0":
         os.makedirs(state_dir, exist_ok=True)
         with open(kbd_brightness_state, "w") as f:
@@ -161,15 +153,15 @@ def restore_bkb() -> None:
         with open(kbd_brightness_state, "r") as f:
             val: str = f.read().strip()
             if val:
-                run_cmd(f"bkb {val}")
+                t2.execute_command(f"bkb {val}")
 
 
 def enter_idle() -> None:
     _log("+", "Entering idle mode...")
     save_power_profile()
     save_bkb()
-    run_cmd("qs -c noctalia-shell ipc call powerProfile set power-saver")
-    run_cmd("bkb 0")
+    t2.execute_command("qs -c noctalia-shell ipc call powerProfile set power-saver")
+    t2.execute_command("bkb 0")
 
 
 def exit_idle() -> None:
