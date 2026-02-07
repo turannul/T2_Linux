@@ -18,7 +18,7 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any, List, Optional
+from typing import List, Optional
 
 try:
     import t2
@@ -63,9 +63,9 @@ def run_cmd_wrapper(cmd: List[str], check: bool = False, as_user: bool = False):
         env: dict[str, str] = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = f"/run/user/{target_uid}"
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{target_uid}/bus"
-        
+
         full_cmd = ["sudo", "-E", "-u", target_user] + cmd
-        _log("#", f"Running as {target_user}: {' '.join(full_cmd)}")
+        # _log("#", f"Running as {target_user}: {' '.join(full_cmd)}")
         res = subprocess.run(full_cmd, capture_output=True, text=True, check=check, env=env)
         if res.returncode != 0:
             _log("!", f"Command failed (Code {res.returncode}): {res.stderr.strip()}")
