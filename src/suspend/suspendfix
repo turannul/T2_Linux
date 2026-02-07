@@ -18,9 +18,10 @@ import subprocess
 import sys
 import time
 from typing import List, Optional, Any
+import logging
 
 # constants
-log_file = "/var/log/suspend-fix-t2.log"
+
 version = "0.5.2"
 
 # import common utils
@@ -48,7 +49,7 @@ def import_t2():
 t2 = import_t2()
 
 # initialize global logger
-logger = t2.setup_logging(log_file, "SuspendFix")
+logger = t2.setup_logging("SuspendFix")
 
 
 def _log(char, msg) -> None:

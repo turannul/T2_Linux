@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from typing import Pattern
+import logging
 
 # import common utils
 def import_t2():
@@ -43,10 +44,10 @@ def import_t2():
 
 t2 = import_t2()
 
-log_file = "/var/log/wifi-guardian.log"
+
 
 # initialize logger
-t2_logger = t2.setup_logging(log_file, "WiFi-Guardian", level=logging.DEBUG)
+t2_logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
 
 def _log(log_level: str, event_msg: str) -> None:

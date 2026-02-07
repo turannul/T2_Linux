@@ -12,39 +12,39 @@
 #  See the LICENSE file for more details.
 
 import gi
+import logging
 import os
 import re
 import signal
 import subprocess
 import sys
 from gi.repository import Gio, GLib  # type: ignore
-from typing import Literal
 
 # Require PyGObject
 gi.require_version("GLib", "2.0")
 gi.require_version("Gio", "2.0")
 
+
 # import common utils
 def import_t2():
-    import sys
-    import os
     # Check common installation paths
     for path in ["/usr/local/sbin", "/usr/local/lib"]:
         if path not in sys.path:
             sys.path.append(path)
     try:
-        import t2
+        import t2  # type: ignore
         return t2
     except ImportError:
         # fallback for dev environment
         script_dir = os.path.dirname(os.path.abspath(__file__))
         sys.path.append(os.path.join(script_dir, "..", "common"))
         try:
-            import t2
+            import t2  # type: ignore
             return t2
         except ImportError:
             print("Error: Could not import t2.py.")
             sys.exit(1)
+
 
 t2 = import_t2()
 
@@ -57,10 +57,10 @@ ac_multiplier = 2
 state_dir = os.path.expanduser("~/.local/state")
 power_profile_state = os.path.join(state_dir, "power_profile_state")
 kbd_brightness_state = os.path.join(state_dir, "kbd_brightness_state")
-log_file = "/var/log/idle_mgmr.log"
+
 
 # Globals
-logger = t2.setup_logging(log_file, "IdleManager")
+logger = t2.setup_logging("IdleManager")
 loop = GLib.MainLoop()
 event_process = None
 timeout_process = None
@@ -86,20 +86,20 @@ def setup_env() -> None:
         if os.path.exists(runtime_dir):
             if "XDG_RUNTIME_DIR" not in os.environ:
                 os.environ["XDG_RUNTIME_DIR"] = runtime_dir
-                logger.info(f"Set XDG_RUNTIME_DIR={runtime_dir}")
+                _log("#", f"Set XDG_RUNTIME_DIR={runtime_dir}")
 
             if "WAYLAND_DISPLAY" not in os.environ:
                 for item in os.listdir(runtime_dir):
                     if item.startswith("wayland-") and not item.endswith(".lock"):
                         os.environ["WAYLAND_DISPLAY"] = item
-                        logger.info(f"Set WAYLAND_DISPLAY={item}")
+                        _log("#", f"Set WAYLAND_DISPLAY={item}")
                         break
 
             if "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
                 dbus_path = f"{runtime_dir}/bus"
                 if os.path.exists(dbus_path):
                     os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={dbus_path}"
-                    logger.info(f"Set DBUS_SESSION_BUS_ADDRESS=unix:path={dbus_path}")
+                    _log("#", f"Set DBUS_SESSION_BUS_ADDRESS=unix:path={dbus_path}")
     except Exception as e:
         logger.error(f"Failed to setup environment: {e}")
 
@@ -195,7 +195,7 @@ def get_self_cmd(action) -> str:
 
 
 # --- Checks ---
-def check_ac() -> Literal[True]:
+def check_ac() -> bool:
     global on_ac
     ac_path = "/sys/class/power_supply/ADP1/online"
     if os.path.exists(ac_path):
@@ -205,10 +205,10 @@ def check_ac() -> Literal[True]:
                 on_ac = is_ac
                 _log("+", f"Power Source: {'AC' if is_ac else 'Battery'}")
                 update_timeouts()
-    return True
+    return True if is_ac else False
 
 
-def check_audio():
+def check_audio() -> bool:
     global audio_playing
     res: subprocess.CompletedProcess[str] = t2.run_command("wpctl status", shell=True)
     is_playing = False
@@ -223,21 +223,21 @@ def check_audio():
                 break
     if is_playing != audio_playing:
         audio_playing = is_playing
-        _log("+", f"Audio: {'Playing' if is_playing else 'Silent'}")
+        _log("+", f"Audio: {'Playing' if is_playing else 'Not Playing'}")
         update_timeouts()
-    return True
+    return True if is_playing else False
 
 
-def check_inhibitor() -> Literal[True]:
+def check_inhibitor() -> bool:
     global inhibited
     res: subprocess.CompletedProcess[str] = t2.run_command(["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListInhibitors"])
     pattern = r'"idle"\s+"[^"]*"\s+"[^"]*"\s+"block"'
     is_inhibited = bool(re.search(pattern, res.stdout))
     if is_inhibited != inhibited:
         inhibited = is_inhibited
-        _log("+", f"Inhibitor: {'Detected' if inhibited else 'Cleared'}")
+        _log("+", f"Inhibitor: {'Detected' if inhibited else 'Not Detected'}")
         update_timeouts()
-    return True
+    return True if is_inhibited else False
 
 
 def update_timeouts() -> None:
@@ -245,8 +245,6 @@ def update_timeouts() -> None:
     if timeout_process:
         timeout_process.terminate()
         timeout_process.wait()
-    if inhibited or audio_playing:
-        return
 
     mult = ac_multiplier if on_ac else 1
     t = {"lock": t_lock_bat * mult, "screen": t_screen_bat * mult, "sleep": t_sleep_bat * mult}
@@ -262,9 +260,12 @@ def update_timeouts() -> None:
             "resume", f"{mon_on}; {cmd_active}"]
 
     if not audio_playing:
-        base += ["timeout", str(t['sleep']), "systemctl suspend"]
+        base += ["timeout", str(t['sleep']), "systemctl sleep"]  # systemctl sleep i think better than suspend.
 
-    _log("+", f"Timeouts updated: lock={t['lock']}s, screen={t['screen']}s, "f"suspend={'OFF' if audio_playing else f'{t['sleep']}s'}")
+    _log("+", "Swayidle configured with:")
+    _log("+", f"- Lock after: {t['lock']}s")
+    _log("+", f"- Screen off after: {t['screen']}s")
+    _log("+", f"- Suspend after: {'OFF' if audio_playing else f'{t['sleep']}s'}")
 
     timeout_process = run_as_user(base)
 
@@ -299,6 +300,7 @@ def start_daemon() -> None:
 
     _log("+", "Idle Manager Started")
     loop.run()
+    _log("+", "Idle Manager Stopped")
 
 
 if __name__ == "__main__":

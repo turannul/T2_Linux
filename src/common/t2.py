@@ -18,37 +18,21 @@ import sys
 from typing import List, Union
 
 
-def setup_logging(log_file: str, name: str = "T2Linux", level: int = logging.INFO) -> logging.Logger:
+def setup_logging(name: str = "T2Linux", level: int = logging.INFO) -> logging.Logger:
     """
-    Sets up and returns a standard logger that logs to both stdout and a file.
+    Sets up and returns a standard logger that logs to stdout.
     """
-    # Ensure log directory exists
-    log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        try:
-            os.makedirs(log_dir, exist_ok=True)
-        except OSError:
-            pass
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.handlers = []
 
-    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter("[%(levelname)s] %(message)s")
 
     # stdout
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(formatter)
     logger.addHandler(sh)
-
-    # file
-    try:
-        fh = logging.FileHandler(log_file)
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-    except OSError:
-        pass
-
     return logger
 
 

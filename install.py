@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 
+
 def check_sudo():
     if os.geteuid() != 0:
         os.execvp("sudo", ["sudo", sys.executable] + sys.argv)

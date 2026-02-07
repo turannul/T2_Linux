@@ -14,7 +14,7 @@
 
 import os
 import sys
-from typing import Literal, Any
+from typing import Any, Literal
 
 # --- Colors ---
 cRed = '\033[0;31m'

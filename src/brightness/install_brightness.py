@@ -12,6 +12,7 @@
 #
 #  See the LICENSE file for more details.
 
+import filecmp
 import os
 import shutil
 import sys
@@ -66,14 +67,23 @@ def uninstall_sudo_exception() -> None:
         os.remove(exception_file)
 
 
+# ... (other imports)
+
 def install_common() -> None:
     common_dst = "/usr/local/sbin/t2.py"
-    if os.path.exists(common_dst):
-        print(f"Common library already exists at {common_dst}. Skipping.")
-        return
-
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     common_src = os.path.join(repo_root, "src", "common", "t2.py")
+
+    if os.path.exists(common_src):
+        if os.path.exists(common_dst) and filecmp.cmp(common_src, common_dst, shallow=False):
+            print(f"Common library at {common_dst} is identical. Skipping update.")
+            return
+
+        print(f"Installing common library to {common_dst}...")
+        shutil.copy(common_src, common_dst)
+    else:
+        print("Warning: Common library not found in repo.")
+
 
 
 def install() -> None:
