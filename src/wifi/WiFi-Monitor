@@ -35,7 +35,7 @@ def _log(log_level: str, event_msg: str) -> None:
 
 
 services: list[str] = ["NetworkManager", "bluetooth"]
-modules: list[str] = ["brcmfmac", "hci_bcm4377"]
+modules: list[str] = ["brcmfmac", "brcmfmac_wcc", "hci_bcm4377"]
 cd_time = 30
 
 # regex pattern to match fatal errors (from my own experience):
@@ -52,7 +52,7 @@ def _exec_cmd(command: str) -> bool:
     try:
         _log("#", f"Executing: {command}")
         res = t2.run_command(command, shell=True, check=True)
-        return res.returncode == 0
+        return True if res.returncode == 0 else False
     except subprocess.CalledProcessError:
         _log("!", f"Command failed: {command}")
         return False
@@ -141,9 +141,5 @@ def al_is_watching() -> None:
 
 
 if __name__ == "__main__":
-    # auto-elevate if not root
     t2.check_root()
-    _unload()
-    time.sleep(30)
-    _load()
-    # al_is_watching()
+    al_is_watching()
