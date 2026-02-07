@@ -57,7 +57,8 @@ def run_cmd_wrapper(cmd: List[str], check: bool = False, user_mode: bool = False
             return subprocess.CompletedProcess(cmd, 1)
         env = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = f"/run/user/{target_uid}"
-        return subprocess.run(["sudo", "-u", target_user] + cmd, capture_output=True, text=True, check=check, env=env)
+        full_cmd = ["sudo", "-u", target_user] + cmd
+        return subprocess.run(full_cmd, capture_output=True, text=True, check=check, env=env)
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
@@ -81,7 +82,7 @@ def load_module(module_name: str, delay: float = 0.5):
 
     _log("*", f"Loading module {module_name}...")
     for attempt in range(1, 4):
-        if subprocess.run(["modprobe", module_name]).returncode == 0:
+        if subprocess.run(["modprobe", "--verbose", module_name]).returncode == 0:
             _log("*", f"Module {module_name} loaded (Attempt {attempt}).")
             time.sleep(delay)
             return True
@@ -98,30 +99,35 @@ def unload_module(module_name: str, delay: float = 0.5):
 
     _log("*", f"Unloading module {module_name}...")
     for attempt in range(1, 6):
-        if module_name in ["apple-bce", "apple_bce"]:
-            res = subprocess.run(["rmmod", module_name], capture_output=True)
-        else:
-            res = subprocess.run(["modprobe", "--remove", "--remove-holders", module_name], capture_output=True)
+        res = subprocess.run(["modprobe", "--verbose", "--remove", "--remove-holders", module_name], capture_output=True, text=True)
 
         if res.returncode == 0 and not is_module_loaded(module_name):
             _log("*", f"Module {module_name} unloaded (Attempt {attempt}).")
             time.sleep(delay)
             return True
+        else:
+            if res.stderr:
+                _log("!", f"Unload attempt {attempt} failed: {res.stderr.strip()}")
         time.sleep(1)
     _log("-", f"CRITICAL: Failed to unload module {module_name}.")
     return False
 
 
-def stop_service(service_name: str, user_mode: bool = False):
-    cmd = ["systemctl"]
-    if user_mode:
-        cmd.append("--user")
-    if run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], user_mode=user_mode).returncode == 0:
+def stop_service(service_name: str, wait: bool = False, user_mode: bool = False):
+    try:
+        cmd = ["systemctl"]
+        if user_mode:
+            cmd.append("--user")
+        args: list[str] = [] if wait else ["--no-block"]
         _log("*", f"Stopping {service_name}...")
-        run_cmd_wrapper(cmd + ["stop", service_name], user_mode=user_mode)
+        run_cmd_wrapper(cmd + ["stop"] + args + [service_name], user_mode=user_mode)
+        return True
+    except Exception as err:
+        _log("-", f"Something went wrong while stopping with: {service_name}: {err}")
+        return False
 
 
-def start_service(service_name: str, wait: bool = True, user_mode: bool = False):
+def start_service(service_name: str, wait: bool = False, user_mode: bool = False):
     cmd = ["systemctl"]
     if user_mode:
         cmd.append("--user")
@@ -161,16 +167,18 @@ def load_sequence():
     _log("*", "Executing LOAD sequence...")
     _log("_", "###########################")
     load_module("apple-bce", 4)
-    for mod in ["hid_appletb_bl", "hid_appletb_kbd", "appletbdrm"]:
-        load_module(mod)
+    load_module("hid_appletb_bl")
+    load_module("hid_appletb_kbd")
+    load_module("appletbdrm")
     load_module("brcmfmac", 1)
-    load_module("brcmfmac_wcc", 2)
+    start_service("NetworkManager", wait=True, user_mode=False)
+    load_module("brcmfmac_wcc", 1)
     load_module("hci_bcm4377", 1)
-    start_service("tiny-dfr.service", wait=False)
+    start_service("tiny-dfr.service", wait=True, user_mode=False)
     rescan_pci()
     load_module("thunderbolt")
-    for svc in ["pipewire.socket", "pipewire.service", "wireplumber.service"]:
-        start_service(svc, wait=False, user_mode=True)
+    start_service("pipewire.service", user_mode=True, wait=True)
+    start_service("wireplumber.service", user_mode=True, wait=True)
     _log("*", "LOAD sequence complete.")
 
 
@@ -178,16 +186,18 @@ def unload_sequence():
     _log("_", "###########################")
     _log("*", "Executing UNLOAD sequence...")
     _log("_", "###########################")
-    for svc in ["wireplumber.service", "pipewire.socket", "pipewire.service"]:
-        stop_service(svc, user_mode=True)
-    stop_service("tiny-dfr.service")
+    for svc in ["wireplumber.service", "pipewire.service", "pipewire.socket"]:
+        stop_service(svc, user_mode=True, wait=True)
+    stop_service("tiny-dfr.service", wait=True)
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     unload_module("thunderbolt")
-    for mod in ["appletbdrm", "hid_appletb_bl", "hid_appletb_kbd"]:
-        unload_module(mod)
+    unload_module("appletbdrm")
+    unload_module("hid_appletb_bl")
+    unload_module("hid_appletb_kbd")
     unload_module("hci_bcm4377", 2)
-    unload_module("brcmfmac_wcc", 2)
+    stop_service("bluetooth.service", wait=True, user_mode=False)
     unload_module("brcmfmac", 2)
+    stop_service("NetworkManager.service", wait=True, user_mode=False)
     unload_module("apple-bce", 4)
     _log("*", "UNLOAD sequence complete.")
 
