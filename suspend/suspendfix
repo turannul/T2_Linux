@@ -1,282 +1,275 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+import argparse
+import logging
+import os
+import subprocess
+import sys
+import time
+from typing import List, Optional
 
-if [ "$EUID" -ne 0 ]; then
-    exec sudo "$(command -v "$0")" "$@"
-fi
+# Constants
+LOG_FILE = "/var/log/suspend-fix-t2.log"
+VERSION = "0.4"
 
-cmd_date=$(command -v date)
-cmd_printf=$(command -v printf)
-cmd_tee=$(command -v tee)
-cmd_lsmod=$(command -v lsmod)
-cmd_grep=$(command -v grep)
-cmd_modprobe=$(command -v modprobe)
-cmd_sleep=$(command -v sleep)
-cmd_rmmod=$(command -v rmmod)
-cmd_systemctl=$(command -v systemctl)
-cmd_loginctl=$(command -v loginctl)
-cmd_head=$(command -v head)
-cmd_awk=$(command -v awk)
-cmd_id=$(command -v id)
 
-target_user=$($cmd_loginctl list-users --no-legend | $cmd_head -n 1 | $cmd_awk '{print $2}')
-if [ -n "$target_user" ]; then
-	target_UID=$($cmd_id -u "$target_user")
-fi
+class SuspendFix:
+    def __init__(self):
+        self.setup_logging()
+        self.target_user, self.target_uid = self._get_active_user()
 
-log_file="/var/log/suspend-fix-t2.log"
+    def setup_logging(self):
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s] [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[
+                logging.FileHandler(LOG_FILE),
+                logging.StreamHandler(sys.stdout),
+            ],
+        )
+        self.logger = logging.getLogger("SuspendFix")
 
-function log() {
-	local log_level="$1"
-	local event_msg="$2"
-	local timestamp
-	timestamp=$($cmd_date "+%Y-%m-%d %H:%M:%S")
-	local level_str="INFO"
+    def _get_active_user(self) -> tuple[Optional[str], Optional[str]]:
+        try:
+            output = subprocess.check_output(
+                ["loginctl", "list-users", "--no-legend"], text=True
+            ).strip()
+            if not output:
+                return None, None
+            first_line = output.splitlines()[0]
+            parts = first_line.split()
+            if len(parts) >= 2:
+                user = parts[1]
+                uid = subprocess.check_output(["id", "-u", user], text=True).strip()
+                return user, uid
+        except Exception as e:
+            self.logger.debug(f"Failed to get active user: {e}")
+        return None, None
 
-	case "$log_level" in
-	"-")
-		level_str="ERROR"
-		;;
-	"!")
-		level_str="WARNING"
-		;;
-	"*")
-		level_str="INFO"
-		;;
-	"#")
-		level_str="DEBUG"
-		;;
-	*)
-		level_str="INFO"
-		;;
-	esac
+    def _run_cmd(
+        self, cmd: List[str], check: bool = False, user_mode: bool = False
+    ) -> subprocess.CompletedProcess:
+        if user_mode:
+            if not self.target_user:
+                self.logger.warning(f"No active user found for command: {' '.join(cmd)}")
+                return subprocess.CompletedProcess(cmd, 1)
+            env = os.environ.copy()
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{self.target_uid}"
+            full_cmd = ["sudo", "-u", self.target_user] + cmd
+            return subprocess.run(
+                full_cmd, capture_output=True, text=True, check=check, env=env
+            )
+        return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
-	$cmd_printf "[$timestamp] [$level_str] $event_msg\n" | $cmd_tee --append "$log_file"
-}
+    def is_module_loaded(self, module_name: str) -> bool:
+        module_name = module_name.replace("-", "_")
+        try:
+            with open("/proc/modules", "r") as f:
+                for line in f:
+                    if line.startswith(f"{module_name} "):
+                        return True
+        except Exception:
+            # Fallback to lsmod
+            res = subprocess.run(["lsmod"], capture_output=True, text=True)
+            return f"\n{module_name} " in f"\n{res.stdout}"
+        return False
 
-function _load_module() {
-	local module_name="${1//-/_}"
-	local delay="${2:-0.5}"
-	local max_retries=3
-	local attempt=1
+    def load_module(self, module_name: str, delay: float = 0.5):
+        if self.is_module_loaded(module_name):
+            self.logger.debug(f"Module {module_name} is already loaded, skipping.")
+            return True
 
-	if $cmd_lsmod | $cmd_grep -q "^$module_name\s"; then
-		log "#" "Module $1 is already loaded, skipping."
-		return 0
-	fi
+        self.logger.info(f"Loading module {module_name}...")
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            res = subprocess.run(["modprobe", module_name])
+            if res.returncode == 0:
+                self.logger.info(f"Module {module_name} loaded (Attempt {attempt}).")
+                self.logger.info(f"Waiting {delay}s for initialization...")
+                time.sleep(delay)
+                return True
+            self.logger.warning(
+                f"Failed to load {module_name}. Retrying in 1s... ({attempt}/{max_retries})"
+            )
+            time.sleep(1)
 
-	log "*" "Loading module $1..."
-	while [ $attempt -le $max_retries ]; do
-		if $cmd_modprobe "$1"; then
-			log "*" "Module $1 loaded (Attempt $attempt)."
-			log "*" "Waiting ${delay}s for initialization..."
-			$cmd_sleep "$delay"
-			return 0
-		fi
-		log "!" "Failed to load $1. Retrying in 1s... ($attempt/$max_retries)"
-		$cmd_sleep 1
-		((attempt++))
-	done
+        self.logger.error(
+            f"CRITICAL: Failed to load module {module_name} after {max_retries} attempts."
+        )
+        return False
 
-	log "-" "CRITICAL: Failed to load module $1 after $max_retries attempts."
-	return 1
-}
+    def unload_module(self, module_name: str, delay: float = 0.5):
+        mod_name_canonical = module_name.replace("-", "_")
+        if not self.is_module_loaded(module_name):
+            self.logger.debug(f"Module {module_name} is not loaded, skipping.")
+            return True
 
-function _unload_module() {
-	local module_name="${1//-/_}"
-	local delay="${2:-0.5}"
-	local max_retries=5
-	local attempt=1
+        self.logger.info(f"Unloading module {module_name}...")
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            if module_name == "apple-bce" or mod_name_canonical == "apple_bce":
+                res = subprocess.run(["rmmod", module_name], capture_output=True)
+            else:
+                res = subprocess.run(
+                    ["modprobe", "--remove", "--remove-holders", module_name],
+                    capture_output=True,
+                )
 
-	if ! $cmd_lsmod | $cmd_grep -q "^$module_name\s"; then
-		log "#" "Module $1 is not loaded, skipping."
-		return 0
-	fi
+            if res.returncode == 0:
+                if not self.is_module_loaded(module_name):
+                    self.logger.info(
+                        f"Module {module_name} unloaded successfully (Attempt {attempt})."
+                    )
+                    self.logger.info(f"Waiting {delay}s for deinitialization...")
+                    time.sleep(delay)
+                    return True
 
-	log "*" "Unloading module $1..."
-	while [ $attempt -le $max_retries ]; do
-		local res=0
-		if [ "$1" == "apple-bce" ] || [ "$module_name" == "apple_bce" ]; then
-			$cmd_rmmod "$1" 2>/dev/null || res=1
-		else
-			$cmd_modprobe --remove --remove-holders "$1" 2>/dev/null || res=1
-		fi
+            self.logger.warning(
+                f"Module {module_name} busy or failed to unload. Retrying in 1s... ({attempt}/{max_retries})"
+            )
+            time.sleep(1)
 
-		if [ $res -eq 0 ]; then
-			# Verify it's actually gone
-			if ! $cmd_lsmod | $cmd_grep -q "^$module_name\s"; then
-				log "*" "Module $1 unloaded successfully (Attempt $attempt)."
-				log "*" "Waiting ${delay}s for deinitialization..."
-				$cmd_sleep "$delay"
-				return 0
-			fi
-			
-		fi
+        self.logger.error(f"CRITICAL: Failed to unload module {module_name}.")
+        return False
 
-		log "!" "Module $1 busy or failed to unload. Retrying in 1s... ($attempt/$max_retries)"
-		$cmd_sleep 1
-		((attempt++))
-	done
+    def stop_service(self, service_name: str, user_mode: bool = False):
+        cmd = ["systemctl"]
+        if user_mode:
+            cmd.append("--user")
 
-	log "-" "CRITICAL: Failed to unload module $1."
-	return 1
-}
+        res = self._run_cmd(cmd + ["is-active", "--quiet", service_name], user_mode=user_mode)
+        if res.returncode == 0:
+            self.logger.info(f"Stopping {service_name}...")
+            self._run_cmd(cmd + ["stop", service_name], user_mode=user_mode)
 
-function _stop_service() {
-	local service_name=$1
-	local user_mode=$2
-	local ctl=$cmd_systemctl
+    def start_service(self, service_name: str, wait: bool = True, user_mode: bool = False):
+        cmd = ["systemctl"]
+        if user_mode:
+            cmd.append("--user")
 
-	if [ "$user_mode" == "user" ]; then
-		if [ -z "$target_user" ]; then
-			log "!" "No active user found, skipping user service $service_name"
-			return 0
-		fi
-		ctl="sudo -u $target_user XDG_RUNTIME_DIR=/run/user/$target_UID $cmd_systemctl --user"
-	fi
+        ctl_args = []
+        if not wait:
+            ctl_args.append("--no-block")
 
-	if $ctl is-active --quiet "$service_name"; then
-		log "*" "Stopping $service_name..."
-		$ctl stop "$service_name"
-	fi
-}
+        res = self._run_cmd(cmd + ["is-active", "--quiet", service_name], user_mode=user_mode)
+        if res.returncode != 0:
+            self.logger.info(f"Starting {service_name}...")
+            self._run_cmd(cmd + ["start"] + ctl_args + [service_name], user_mode=user_mode)
+        else:
+            self.logger.info(f"{service_name} is already running, restarting...")
+            self._run_cmd(cmd + ["restart"] + ctl_args + [service_name], user_mode=user_mode)
 
-function _start_service() {
-	local service_name=$1
-	local wait_arg="${2:-wait}"
-	local user_mode=$3
-	local ctl=$cmd_systemctl
-	local ctl_args=""
+    def rescan_pci(self):
+        self.logger.info("Rescanning PCI bus...")
+        try:
+            with open("/sys/bus/pci/rescan", "w") as f:
+                f.write("1")
+            self.logger.info("PCI rescan triggered successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to trigger PCI rescan: {e}")
 
-	if [ "$user_mode" == "user" ]; then
-		if [ -z "$target_user" ]; then
-			log "!" "No active user found, skipping user service $service_name"
-			return 0
-		fi
-		ctl="sudo -u $target_user XDG_RUNTIME_DIR=/run/user/$target_UID $cmd_systemctl --user"
-	fi
+    def remove_device(self, device_id: str, device_name: Optional[str] = None):
+        name = device_name or f"device {device_id}"
+        remove_path = f"/sys/bus/pci/devices/{device_id}/remove"
 
-	if [ "$wait_arg" == "no-wait" ]; then
-		ctl_args="--no-block"
-	fi
+        if os.path.exists(remove_path):
+            self.logger.info(f"Removing {name}...")
+            try:
+                with open(remove_path, "w") as f:
+                    f.write("1")
+                if not os.path.exists(f"/sys/bus/pci/devices/{device_id}"):
+                    self.logger.info(f"Removed {name} successfully.")
+                    return True
+            except Exception as e:
+                self.logger.error(f"Failed to remove {name}: {e}")
+        else:
+            self.logger.warning(f"{name} not found, skipping removal.")
+        return False
 
-	if ! $ctl is-active --quiet "$service_name"; then
-		log "*" "Starting $service_name..."
-		$ctl start $ctl_args "$service_name"
-	else
-		log "*" "$service_name is already running, restarting..."
-		$ctl restart $ctl_args "$service_name"
-	fi
-}
+    def load_sequence(self):
+        self.logger.info("###########################")
+        self.logger.info("Executing LOAD sequence...")
+        self.logger.info("###########################")
 
-function _rescan_PCI() {
-	log "*" "Rescanning PCI bus..."
-	if echo 1 > /sys/bus/pci/rescan; then
-		log "*" "PCI rescan triggered successfully."
-	else
-		log "-" "Failed to trigger PCI rescan."
-	fi
-}
+        self.logger.info("PHASE 1: Root Modules")
+        self.load_module("apple-bce", 4)
 
-function _remove_device() {
-	local device_id=$1
-	local device_name="${2:-device $device_id}"
-	local remove_path="/sys/bus/pci/devices/$device_id/remove"
+        self.logger.info("PHASE 2: Peripheral Modules")
+        self.load_module("hid_appletb_bl")
+        self.load_module("hid_appletb_kbd")
+        self.load_module("appletbdrm")
+        self.load_module("brcmfmac", 1)
+        self.load_module("brcmfmac_wcc", 2)
+        self.load_module("hci_bcm4377", 1)
 
-	if [ -w "$remove_path" ]; then
-		log "*" "Removing $device_name..."
-		if echo 1 > "$remove_path" 2>/dev/null; then
-			if [ ! -e "/sys/bus/pci/devices/$device_id" ]; then
-				log "*" "Removed $device_name successfully."
-				return 0
-			fi
-		fi
-		log "-" "Failed to remove $device_name."
-	else
-		log "!" "$device_name not found, skipping removal."
-	fi
-}
+        self.logger.info("PHASE 3: Services & Hardware Wake")
+        self.start_service("tiny-dfr.service", wait=False)
+        self.rescan_pci()
 
-function load() {
-	log "_" "###########################"
-	log "*" "Executing LOAD sequence..."
-	log "_" "###########################"
+        self.logger.info("PHASE 4: Thunderbolt & Audio")
+        self.load_module("thunderbolt")
 
-	log "*" "PHASE 1: Root Modules"
-	_load_module apple-bce 4
-	
-	log "*" "PHASE 2: Peripheral Modules"
-	_load_module hid_appletb_bl
-	_load_module hid_appletb_kbd
-	_load_module appletbdrm
-	_load_module brcmfmac 1
-	_load_module brcmfmac_wcc 2
-	_load_module hci_bcm4377 1
-	
-	log "*" "PHASE 3: Services & Hardware Wake"
-	_start_service tiny-dfr.service no-wait
-	_rescan_PCI
-	
-	log "*" "PHASE 4: Thunderbolt & Audio"
-	_load_module thunderbolt
+        self.start_service("pipewire.socket", wait=False, user_mode=True)
+        self.start_service("pipewire.service", wait=False, user_mode=True)
+        self.start_service("wireplumber.service", wait=False, user_mode=True)
 
-	_start_service pipewire.socket no-wait user
-	_start_service pipewire.service no-wait user
-	_start_service wireplumber.service no-wait user
-	
-	log "*" "LOAD sequence complete."
-}
+        self.logger.info("LOAD sequence complete.")
 
-function unload() {
-	log "_" "###########################"
-	log "*" "Executing UNLOAD sequence..."
-	log "_" "###########################"
+    def unload_sequence(self):
+        self.logger.info("###########################")
+        self.logger.info("Executing UNLOAD sequence...")
+        self.logger.info("###########################")
 
-	log "*" "PHASE 1: Stop Services"
-	# Stop audio first to release drivers
-	_stop_service wireplumber.service user
-	_stop_service pipewire.socket user
-	_stop_service pipewire.service user
-	_stop_service tiny-dfr.service
+        self.logger.info("PHASE 1: Stop Services")
+        self.stop_service("wireplumber.service", user_mode=True)
+        self.stop_service("pipewire.socket", user_mode=True)
+        self.stop_service("pipewire.service", user_mode=True)
+        self.stop_service("tiny-dfr.service")
 
-	log "*" "PHASE 2: Hardware Teardown (Thunderbolt)"
-	_remove_device "0000:06:00.0" "Thunderbolt Controller"
-	_unload_module thunderbolt
+        self.logger.info("PHASE 2: Hardware Teardown (Thunderbolt)")
+        self.remove_device("0000:06:00.0", "Thunderbolt Controller")
+        self.unload_module("thunderbolt")
 
-	log "*" "PHASE 3: Unload Leaf Modules"
-	_unload_module appletbdrm
-	_unload_module hid_appletb_bl
-	_unload_module hid_appletb_kbd
-	_unload_module hci_bcm4377 2
-	_unload_module brcmfmac_wcc 2
-	_unload_module brcmfmac 2
-	
-	log "*" "PHASE 4: Unload Root Module"
-	_unload_module apple-bce 4
-	
-	log "*" "UNLOAD sequence complete."
-}
+        self.logger.info("PHASE 3: Unload Leaf Modules")
+        self.unload_module("appletbdrm")
+        self.unload_module("hid_appletb_bl")
+        self.unload_module("hid_appletb_kbd")
+        self.unload_module("hci_bcm4377", 2)
+        self.unload_module("brcmfmac_wcc", 2)
+        self.unload_module("brcmfmac", 2)
 
-function reload() {
-	unload
-	$cmd_sleep 10
-	load
-}
+        self.logger.info("PHASE 4: Unload Root Module")
+        self.unload_module("apple-bce", 4)
 
-case "$1" in
-	load)
-		load
-		;;
-	unload)
-		unload
-		;;
-	reload)
-		reload
-		;;
-	version | v)
-		echo "0.4"
-		;;
-	*)
-		echo "Usage: $0 load unload reload"
-		exit 1
-		;;
-esac
+        self.logger.info("UNLOAD sequence complete.")
+
+    def reload_sequence(self):
+        self.unload_sequence()
+        time.sleep(10)
+        self.load_sequence()
+
+
+def main():
+    if os.geteuid() != 0:
+        os.execvp("sudo", ["sudo", "python3"] + sys.argv)
+
+    parser = argparse.ArgumentParser(description="T2 Linux Suspend Fix")
+    parser.add_argument(
+        "action", choices=["load", "unload", "reload", "version", "v"], help="Action to perform"
+    )
+    args = parser.parse_args()
+
+    fix = SuspendFix()
+
+    if args.action in ["version", "v"]:
+        print(VERSION)
+    elif args.action == "load":
+        fix.load_sequence()
+    elif args.action == "unload":
+        fix.unload_sequence()
+    elif args.action == "reload":
+        fix.reload_sequence()
+
+
+if __name__ == "__main__":
+    main()
