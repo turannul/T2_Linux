@@ -20,18 +20,28 @@ import time
 from typing import Pattern
 
 # import common utils
-sys.path.append("/usr/local/lib/t2linux")
-try:
-    import t2  # type: ignore
-except ImportError:
-    # fallback for dev environment
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.append(os.path.join(script_dir, "..", "common"))
+def import_t2():
+    import sys
+    import os
+    # Check common installation paths
+    for path in ["/usr/local/sbin", "/usr/local/lib"]:
+        if path not in sys.path:
+            sys.path.append(path)
     try:
-        import t2  # type: ignore
+        import t2
+        return t2
     except ImportError:
-        print("Error: Could not import t2.py.")
-        sys.exit(1)
+        # fallback for dev environment
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.append(os.path.join(script_dir, "..", "common"))
+        try:
+            import t2
+            return t2
+        except ImportError:
+            print("Error: Could not import t2.py.")
+            sys.exit(1)
+
+t2 = import_t2()
 
 log_file = "/var/log/wifi-guardian.log"
 

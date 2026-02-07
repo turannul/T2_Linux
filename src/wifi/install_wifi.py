@@ -29,16 +29,13 @@ def check_sudo() -> None:
 
 
 def install_common() -> None:
-    repo_root: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    common_src: str = os.path.join(repo_root, "common", "t2.py")
-    common_dir = "/usr/local/lib/t2linux"
+    common_dst = "/usr/local/sbin/t2.py"
+    if os.path.exists(common_dst):
+        print(f"Common library already exists at {common_dst}. Skipping.")
+        return
 
-    if os.path.exists(common_src):
-        print(f"Installing common library to {common_dir}...")
-        os.makedirs(common_dir, exist_ok=True)
-        shutil.copy(common_src, os.path.join(common_dir, "t2.py"))
-    else:
-        print("Warning: Common library not found in repo.")
+    repo_root: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    common_src: str = os.path.join(repo_root, "src", "common", "t2.py")
 
 
 def install() -> None:
@@ -62,6 +59,8 @@ def install() -> None:
         shutil.copy(svc_src, svc_dst)
         print("Reloading systemd...")
         subprocess.run(["systemctl", "daemon-reload"])
+        print(f"Enabling and starting {service_name}...")
+        subprocess.run(["systemctl", "enable", "--now", service_name])
     else:
         print(f"Warning: {service_name} not found.")
 

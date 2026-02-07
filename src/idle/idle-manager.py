@@ -25,18 +25,28 @@ gi.require_version("GLib", "2.0")
 gi.require_version("Gio", "2.0")
 
 # import common utils
-sys.path.append("/usr/local/lib/t2linux")
-try:
-    from common import t2
-except ImportError:
-    # fallback for dev environment
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.append(os.path.join(script_dir, ".."))
+def import_t2():
+    import sys
+    import os
+    # Check common installation paths
+    for path in ["/usr/local/sbin", "/usr/local/lib"]:
+        if path not in sys.path:
+            sys.path.append(path)
     try:
-        from common import t2
+        import t2
+        return t2
     except ImportError:
-        print("Error: Could not import t2.py.")
-        sys.exit(1)
+        # fallback for dev environment
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.append(os.path.join(script_dir, "..", "common"))
+        try:
+            import t2
+            return t2
+        except ImportError:
+            print("Error: Could not import t2.py.")
+            sys.exit(1)
+
+t2 = import_t2()
 
 # --- Configuration ---
 t_lock_bat = 30
@@ -112,6 +122,9 @@ def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
     uid = 1000
     runtime_dir: str = f"/run/user/{uid}"
     prefix: list[str] = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
+
+    if "WAYLAND_DISPLAY" in os.environ:
+        prefix.append(f"WAYLAND_DISPLAY={os.environ['WAYLAND_DISPLAY']}")
 
     if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
         prefix.append(f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}")
@@ -189,7 +202,7 @@ def check_ac() -> Literal[True]:
         with open(ac_path, "r") as f:
             is_ac: bool = (f.read().strip() == "1")
             if is_ac != on_ac:
-                on_ac: bool = is_ac
+                on_ac = is_ac
                 _log("+", f"Power Source: {'AC' if is_ac else 'Battery'}")
                 update_timeouts()
     return True
@@ -221,7 +234,7 @@ def check_inhibitor() -> Literal[True]:
     pattern = r'"idle"\s+"[^"]*"\s+"[^"]*"\s+"block"'
     is_inhibited = bool(re.search(pattern, res.stdout))
     if is_inhibited != inhibited:
-        inhibited: bool = is_inhibited
+        inhibited = is_inhibited
         _log("#", f"Inhibitor: {'Detected' if inhibited else 'Cleared'}")
         update_timeouts()
     return True

@@ -67,16 +67,13 @@ def uninstall_sudo_exception() -> None:
 
 
 def install_common() -> None:
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    common_src = os.path.join(repo_root, "common", "t2.py")
-    common_lib_dir = "/usr/local/lib/t2linux"
+    common_dst = "/usr/local/sbin/t2.py"
+    if os.path.exists(common_dst):
+        print(f"Common library already exists at {common_dst}. Skipping.")
+        return
 
-    if os.path.exists(common_src):
-        print(f"Installing common library to {common_lib_dir}...")
-        os.makedirs(common_lib_dir, exist_ok=True)
-        shutil.copy(common_src, os.path.join(common_lib_dir, "t2.py"))
-    else:
-        print("Warning: Common library not found in repo.")
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    common_src = os.path.join(repo_root, "src", "common", "t2.py")
 
 
 def install() -> None:
