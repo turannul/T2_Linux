@@ -1,0 +1,1 @@
+../brightness/install_brightness.py

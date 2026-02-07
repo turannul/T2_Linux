@@ -90,7 +90,13 @@ def commit_brightness(value, device_path, old_label, new_label):
 
         print(f"{cGreen}{old_label} > {new_label}{cReset}")
         return True
-    except IOError as e: ## Handle FileNotFound // PermissionError (just print diffrent messages.) ## 
+    except FileNotFoundError:
+        print(f"{cRed}Error: Brightness file not found in {device_path}.{cReset}", file=sys.stderr)
+        return False
+    except PermissionError:
+        print(f"{cRed}Error: Permission denied. Please run with sudo.{cReset}", file=sys.stderr)
+        return False
+    except IOError as e:
         print(f"{cRed}Error writing to brightness file: {e}{cReset}", file=sys.stderr)
         return False
 
