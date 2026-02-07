@@ -20,7 +20,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgirepository1.0-dev
+        sudo apt-get install -y libgirepository1.0-dev fd-find
         
     - name: Install dependencies
       run: |
@@ -29,14 +29,12 @@ jobs:
         
     - name: Run flake8
       run: |
-        # Check all .py files
-        flake8 .
-        # Check scripts without extensions
-        flake8 suspend/suspendfix wifi/WiFi-Monitor brightness/bdp brightness/bkb brightness/btb
+        # Find all .py files and specific extensionless scripts, then run flake8
+        fdfind -e py -H . -x flake8
+        fdfind 'suspendfix|WiFi-Monitor|bdp|bkb|btb' . -x flake8
       
     - name: Run pyright
       run: |
-        # Check all .py files
-        pyright .
-        # Check scripts without extensions
-        pyright suspend/suspendfix wifi/WiFi-Monitor brightness/bdp brightness/bkb brightness/btb
+        # Find all .py files and specific extensionless scripts, then run pyright
+        fdfind -e py -H . -x pyright
+        fdfind 'suspendfix|WiFi-Monitor|bdp|bkb|btb' . -x pyright
