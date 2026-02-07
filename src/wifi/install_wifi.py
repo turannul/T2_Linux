@@ -4,7 +4,6 @@
 #  T2_Linux
 #
 #  Created by turannul on 07/02/2026.
-#  Rewritten in Python on 07/02/2026.
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
