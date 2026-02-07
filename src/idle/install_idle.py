@@ -29,12 +29,10 @@ def check_sudo() -> None:
         os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
 
 
-# ... (other imports)
-
 def install_common() -> None:
     common_dst = "/usr/local/sbin/t2.py"
-    repo_root: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    common_src: str = os.path.join(repo_root, "src", "common", "t2.py")
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    common_src = os.path.join(repo_root, "src", "t2.py")
 
     if os.path.exists(common_src):
         if os.path.exists(common_dst) and filecmp.cmp(common_src, common_dst, shallow=False):

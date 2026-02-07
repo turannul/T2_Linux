@@ -15,20 +15,7 @@
 import brightness_common
 import os
 import sys
-
-# import common utils
-sys.path.append("/usr/local/lib/t2linux")
-try:
-    import t2  # type: ignore
-except ImportError:
-    # fallback for dev environment
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.append(os.path.join(script_dir, "..", "common"))
-    try:
-        import t2  # type: ignore
-    except ImportError:
-        print("Error: Could not import t2.py.")
-        sys.exit(1)
+import t2
 
 
 def main() -> None:

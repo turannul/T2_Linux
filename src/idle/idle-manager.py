@@ -18,35 +18,13 @@ import re
 import signal
 import subprocess
 import sys
+import t2
 from gi.repository import Gio, GLib  # type: ignore
 
 # Require PyGObject
 gi.require_version("GLib", "2.0")
 gi.require_version("Gio", "2.0")
 
-
-# import common utils
-def import_t2():
-    # Check common installation paths
-    for path in ["/usr/local/sbin", "/usr/local/lib"]:
-        if path not in sys.path:
-            sys.path.append(path)
-    try:
-        import t2  # type: ignore
-        return t2
-    except ImportError:
-        # fallback for dev environment
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        sys.path.append(os.path.join(script_dir, "..", "common"))
-        try:
-            import t2  # type: ignore
-            return t2
-        except ImportError:
-            print("Error: Could not import t2.py.")
-            sys.exit(1)
-
-
-t2 = import_t2()
 
 # --- Configuration ---
 t_lock_bat = 30
@@ -60,7 +38,7 @@ kbd_brightness_state = os.path.join(state_dir, "kbd_brightness_state")
 
 
 # Globals
-logger = t2.setup_logging("IdleManager")
+logger = t2.setup_logging("IdleManager", level=logging.DEBUG)
 loop = GLib.MainLoop()
 event_process = None
 timeout_process = None
@@ -197,10 +175,11 @@ def get_self_cmd(action) -> str:
 # --- Checks ---
 def check_ac() -> bool:
     global on_ac
+    is_ac: bool = False
     ac_path = "/sys/class/power_supply/ADP1/online"
     if os.path.exists(ac_path):
         with open(ac_path, "r") as f:
-            is_ac: bool = (f.read().strip() == "1")
+            is_ac = (f.read().strip() == "1")
             if is_ac != on_ac:
                 on_ac = is_ac
                 _log("+", f"Power Source: {'AC' if is_ac else 'Battery'}")

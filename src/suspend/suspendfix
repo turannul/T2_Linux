@@ -13,43 +13,17 @@
 #  See the LICENSE file for more details.
 
 import argparse
+import logging
 import os
 import subprocess
-import sys
+import t2
 import time
-from typing import List, Optional, Any
-import logging
+from typing import Any, List, Optional
 
 # constants
-
 version = "0.5.2"
-
-# import common utils
-def import_t2():
-    import sys
-    import os
-    # Check common installation paths
-    for path in ["/usr/local/sbin", "/usr/local/lib"]:
-        if path not in sys.path:
-            sys.path.append(path)
-    try:
-        import t2
-        return t2
-    except ImportError:
-        # fallback for dev environment
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        sys.path.append(os.path.join(script_dir, "..", "common"))
-        try:
-            import t2
-            return t2
-        except ImportError:
-            print("Error: Could not import t2.py.")
-            sys.exit(1)
-
-t2 = import_t2()
-
 # initialize global logger
-logger = t2.setup_logging("SuspendFix")
+logger = t2.setup_logging("SuspendFix", level=logging.DEBUG)
 
 
 def _log(char, msg) -> None:

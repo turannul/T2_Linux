@@ -12,39 +12,11 @@
 #  See the LICENSE file for more details.
 
 import logging
-import os
 import re
 import subprocess
-import sys
+import t2
 import time
 from typing import Pattern
-import logging
-
-# import common utils
-def import_t2():
-    import sys
-    import os
-    # Check common installation paths
-    for path in ["/usr/local/sbin", "/usr/local/lib"]:
-        if path not in sys.path:
-            sys.path.append(path)
-    try:
-        import t2
-        return t2
-    except ImportError:
-        # fallback for dev environment
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        sys.path.append(os.path.join(script_dir, "..", "common"))
-        try:
-            import t2
-            return t2
-        except ImportError:
-            print("Error: Could not import t2.py.")
-            sys.exit(1)
-
-t2 = import_t2()
-
-
 
 # initialize logger
 t2_logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
