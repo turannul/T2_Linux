@@ -15,7 +15,11 @@ import logging
 import os
 import subprocess
 import sys
-from typing import List, Union
+from typing import List, Union, Tuple, Optional, Dict
+
+# Prevent __pycache__ creation
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
 
 
 def setup_logging(name: str = "T2Linux", level: int = logging.INFO) -> logging.Logger:
@@ -72,15 +76,24 @@ def check_root() -> None:
         os.execvp("sudo", cmd)
 
 
-def run_command(cmd: Union[str, List[str]], shell: bool = False, check: bool = False) -> subprocess.CompletedProcess[str]:
+def execute_command(cmd: str, env: Optional[Dict[str, str]] = None) -> Tuple[str, str, int]:
     """
-    Wrapper for subprocess.run.
+    Execute a shell command synchronously using /bin/zsh.
+    Returns (stdout, stderr, exitcode).
     """
     try:
-        if shell and isinstance(cmd, list):
-            cmd = " ".join(cmd)
-        return subprocess.run(cmd, shell=shell, check=check, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        if check:
-            raise e
-        return subprocess.CompletedProcess(cmd, e.returncode, stdout="", stderr=str(e))
+        res = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            executable='/bin/zsh',
+            env=env,
+            text=True
+        )
+        stdout = res.stdout.strip() if res.stdout else ""
+        stderr = res.stderr.strip() if res.stderr else ""
+        return stdout, stderr, res.returncode
+    except Exception as err:
+        # Re-raise explicit errors during execution setup
+        raise err

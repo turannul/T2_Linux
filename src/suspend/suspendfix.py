@@ -18,7 +18,11 @@ import os
 import subprocess
 import sys
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
+
+# Prevent __pycache__ creation
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
 
 try:
     import t2
@@ -28,7 +32,7 @@ except ImportError:
     import t2
 
 # constants
-version = "0.5.2"
+version = "0.5.4"
 # initialize global logger
 logger = t2.setup_logging("SuspendFix", level=logging.DEBUG)
 
@@ -55,22 +59,22 @@ def get_active_user() -> tuple[None, None] | tuple[str, str]:
 target_user, target_uid = get_active_user()
 
 
-def run_cmd_wrapper(cmd: List[str], check: bool = False, as_user: bool = False):
+def run_cmd_wrapper(cmd: List[str], as_user: bool = False) -> Tuple[str, str, int]:
+    """Wrapper to run commands, optionally as the active user with preserved environment."""
+    cmd_str = " ".join(cmd)
+    env = os.environ.copy()
+
     if as_user:
         if not target_user:
-            logger.warning(f"No active user found for command: {' '.join(cmd)}")
-            return subprocess.CompletedProcess(cmd, 1)
-        env: dict[str, str] = os.environ.copy()
+            _log("!", f"No active user found for command: {cmd_str}")
+            return "", "No active user found", 1
+
         env["XDG_RUNTIME_DIR"] = f"/run/user/{target_uid}"
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{target_uid}/bus"
+        cmd_str = f"sudo -E -u {target_user} {cmd_str}"
 
-        full_cmd = ["sudo", "-E", "-u", target_user] + cmd
-        # _log("#", f"Running as {target_user}: {' '.join(full_cmd)}")
-        res = subprocess.run(full_cmd, capture_output=True, text=True, check=check, env=env)
-        if res.returncode != 0:
-            _log("!", f"Command failed (Code {res.returncode}): {res.stderr.strip()}")
-        return res
-    return subprocess.run(cmd, capture_output=True, text=True, check=check)
+    # Use the shared robust executor from t2
+    return t2.execute_command(cmd_str, env=env)
 
 
 def is_module_loaded(module_name: str) -> bool:
@@ -81,8 +85,8 @@ def is_module_loaded(module_name: str) -> bool:
                 if line.startswith(f"{name} "):
                     return True
     except Exception:
-        res = subprocess.run(["lsmod"], capture_output=True, text=True)
-        return f"\n{name} " in f"\n{res.stdout}"
+        stdout, _, _ = t2.execute_command("lsmod")
+        return f"\n{name} " in f"\n{stdout}"
     return False
 
 
@@ -93,7 +97,8 @@ def load_module(module_name: str, delay: float = 0.5) -> bool:
 
     _log("*", f"Loading module {module_name}...")
     for attempt in range(1, 4):
-        if subprocess.run(["modprobe", "--verbose", module_name]).returncode == 0:
+        _, stderr, code = t2.execute_command(f"modprobe --verbose {module_name}")
+        if code == 0:
             _log("*", f"Module {module_name} loaded (Attempt {attempt}).")
             time.sleep(delay)
             return True
@@ -110,21 +115,21 @@ def unload_module(module_name: str, delay: float = 0.5) -> bool:
 
     _log("*", f"Unloading module {module_name}...")
     for attempt in range(1, 4):
-        res = subprocess.run(["modprobe", "--verbose", "--remove", "--remove-holders", module_name], capture_output=True, text=True)
+        _, stderr, code = t2.execute_command(f"modprobe --verbose --remove --remove-holders {module_name}")
 
-        if res.returncode == 0 and not is_module_loaded(module_name):
+        if code == 0 and not is_module_loaded(module_name):
             _log("*", f"Module {module_name} unloaded (Attempt {attempt}).")
             time.sleep(delay)
             return True
         else:
-            if res.stderr:
-                _log("!", f"Unload attempt {attempt} failed: {res.stderr.strip()}")
+            if stderr:
+                _log("!", f"Unload attempt {attempt} failed: {stderr}")
         time.sleep(1)
     _log("-", f"CRITICAL: Failed to unload module {module_name}.")
     return False
 
 
-def stop_service(service_name: str, block: bool = True, as_user: bool = False) -> bool:
+def stop_service(service_name: str, block: bool = False, as_user: bool = False) -> bool:
     """Stops a systemd service, optionally blocking until it's stopped, with verification and retry logic."""
     try:
         cmd = ["systemctl"]
@@ -133,19 +138,18 @@ def stop_service(service_name: str, block: bool = True, as_user: bool = False) -
         stop_args = [] if block else ["--no-block"]
 
         _log("*", f"Stopping {service_name}...")
-        # Attempt to stop the service
         for attempt in range(1, 4):
             run_cmd_wrapper(cmd + ["stop"] + stop_args + [service_name], as_user=as_user)
             if block:
-                # Check if it's actually stopped
-                if run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user).returncode != 0:
+                # systemctl is-active returns 0 if active, non-zero if inactive (e.g. 3)
+                _, _, code = run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user)
+                if code != 0:
                     _log("+", f"Service {service_name} stopped.")
                     return True
                 else:
                     _log("!", f"Service {service_name} still active after stop attempt {attempt}. Retrying...")
                     time.sleep(1)
             else:
-                # If non-blocking, we just fire and forget
                 return True
 
         _log("-", f"Failed to stop {service_name} after 3 attempts.")
@@ -165,14 +169,16 @@ def start_service(service_name: str, block: bool = False, as_user: bool = False)
         start_args = [] if block else ["--no-block"]
 
         # Check if active to decide between start and restart
-        is_active = run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user).returncode == 0
+        _, _, code = run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user)
+        is_active = (code == 0)
         action = "restart" if is_active else "start"
+
         _log("*", f"{action.capitalize()}ing {service_name}...")
         for attempt in range(1, 4):
             run_cmd_wrapper(cmd + [action] + start_args + [service_name], as_user=as_user)
             if block:
-                # Verify it started
-                if run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user).returncode == 0:
+                _, _, code = run_cmd_wrapper(cmd + ["is-active", "--quiet", service_name], as_user=as_user)
+                if code == 0:
                     _log("+", f"Service {service_name} {action}ed successfully.")
                     return True
                 else:
@@ -215,30 +221,36 @@ def remove_device(device_id: str, name: Optional[str] = None) -> bool:
 
 def load_sequence() -> None:
     _log("*", "Executing LOAD sequence...")
+    
+    # Pre-checks (Debug info only)
+    run_cmd_wrapper(["systemctl", "--user", "is-active", "pipewire.socket"], as_user=True)
+    run_cmd_wrapper(["systemctl", "--user", "is-active", "wireplumber.service"], as_user=True)
+    run_cmd_wrapper(["systemctl", "--user", "is-active", "pipewire.service"], as_user=True)
+
     load_module("apple-bce", 4)
     load_module("hid_appletb_bl")
     load_module("hid_appletb_kbd")
     load_module("appletbdrm")
     load_module("brcmfmac_wcc", 1)
-    start_service("NetworkManager", block=True, as_user=False)
     load_module("hci_bcm4377", 1)
-    start_service("bluetooth.service", block=True, as_user=False)
-    start_service("tiny-dfr.service", block=False, as_user=False)
     rescan_pci()
     load_module("thunderbolt")
-    start_service("pipewire-pulse.service", block=False, as_user=True)
     start_service("pipewire.socket", block=False, as_user=True)
     start_service("pipewire.service", block=False, as_user=True)
     start_service("wireplumber.service", block=False, as_user=True)
+    start_service("NetworkManager", block=True, as_user=False)
+    start_service("bluetooth.service", block=True, as_user=False)
+    start_service("tiny-dfr.service", block=False, as_user=False)
     _log("*", "LOAD sequence complete.")
 
 
 def unload_sequence() -> None:
     _log("*", "Executing UNLOAD sequence...")
-    stop_service("pipewire-pulse.service", as_user=True)
-    stop_service("pipewire.socket", as_user=True)
-    stop_service("wireplumber.service", as_user=True)
-    stop_service("pipewire.service", as_user=True)
+    stop_service("pipewire.socket", block=True, as_user=True)
+    stop_service("wireplumber.service", block=True, as_user=True)
+    stop_service("pipewire.service", block=True, as_user=True)
+    stop_service("bluetooth.service", block=True, as_user=False)
+    stop_service("NetworkManager.service", block=True, as_user=False)
     stop_service("tiny-dfr.service", block=True, as_user=False)
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     unload_module("thunderbolt")
@@ -246,9 +258,7 @@ def unload_sequence() -> None:
     unload_module("hid_appletb_bl")
     unload_module("hid_appletb_kbd")
     unload_module("hci_bcm4377", 2)
-    stop_service("bluetooth.service", block=True, as_user=False)
     unload_module("brcmfmac_wcc", 2)
-    stop_service("NetworkManager.service", block=True, as_user=False)
     unload_module("apple-bce", 4)
     _log("*", "UNLOAD sequence complete.")
 

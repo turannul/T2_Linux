@@ -19,6 +19,10 @@ import sys
 import time
 from typing import Pattern
 
+# Prevent __pycache__ creation
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
+
 try:
     import t2
 except ImportError:
@@ -36,7 +40,6 @@ def _log(log_level: str, event_msg: str) -> None:
 
 services: list[str] = ["NetworkManager", "bluetooth"]
 modules: list[str] = ["brcmfmac", "brcmfmac_wcc", "hci_bcm4377"]
-cd_time = 30
 
 # regex pattern to match fatal errors (from my own experience):
 patterns: list[str] = [
@@ -51,11 +54,11 @@ def _exec_cmd(command: str) -> bool:
     """Execute a shell command and return success status."""
     try:
         _log("#", f"Executing: {command}")
-        res = t2.run_command(command, shell=True, check=True)
-        return True if res.returncode == 0 else False
-    except subprocess.CalledProcessError:
-        _log("!", f"Command failed: {command}")
-        return False
+        stdout, stderr, code = t2.execute_command(command)
+        if code != 0:
+            _log("!", f"Command failed (Code {code}): {command}")
+            return False
+        return True
     except Exception as e:
         _log("!", f"Command failed with error: {e}")
         return False
@@ -103,7 +106,6 @@ def al_is_watching() -> None:
     _log("#", f"Watching for patterns: {patterns}")
 
     compiled_patterns: list[Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in patterns]
-    last_recovery_time = 0
 
     try:
         # popen is different from run_cmd, stick to subprocess for persistent pipe
@@ -119,19 +121,12 @@ def al_is_watching() -> None:
 
             for pattern in compiled_patterns:
                 if pattern.search(line):
-                    # check if we are in a post-recovery cooldown period.
-                    if time.time() - last_recovery_time < cd_time:
-                        _log("+", "Error detected, but cooldown is active. Skipping reset.")
-                        break
-
                     _log("#", f"PATTERN MATCHED: {pattern}")
                     _log("-", f"TRIGGER MATCHED: {line.strip()}")
                     _log("-", "CRITICAL HARDWARE HANG DETECTED. Initiating Nuclear Reset...")
                     _unload()
                     _load()
                     _log("+", "Reset sequence complete. Monitoring for stability...")
-
-                    last_recovery_time = time.time()
                     break
 
     except PermissionError:

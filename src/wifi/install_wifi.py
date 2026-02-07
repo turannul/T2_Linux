@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-script_src = "WiFi-Monitor"
+script_src = "WiFi-Monitor.py"
 script_dst = "WiFi-Monitor"
 service_name = "WiFi-Monitor.service"
 install_bin = "/usr/local/sbin"

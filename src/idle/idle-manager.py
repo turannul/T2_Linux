@@ -17,6 +17,11 @@ import os
 import re
 import subprocess
 import sys
+
+# Prevent __pycache__ creation
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
+
 from gi.repository import Gio, GLib  # type: ignore
 
 try:
@@ -119,10 +124,11 @@ def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
 
 
 def run_cmd(cmd, shell=True) -> str:
-    res: subprocess.CompletedProcess[str] = t2.run_command(cmd, shell=shell)
-    if res.returncode != 0:
-        _log("-", f"Error running '{cmd}': {res.stderr}")
-    return res.stdout.strip()
+    # shell argument is ignored as execute_command always uses shell
+    stdout, stderr, code = t2.execute_command(cmd)
+    if code != 0:
+        _log("-", f"Error running '{cmd}': {stderr}")
+    return stdout
 
 
 # --- State ---
@@ -193,10 +199,10 @@ def check_ac() -> bool:
 
 def check_audio() -> bool:
     global audio_playing
-    res: subprocess.CompletedProcess[str] = t2.run_command("wpctl status", shell=True)
+    stdout, _, _ = t2.execute_command("wpctl status")
     is_playing = False
-    if "Streams:" in res.stdout:
-        streams: list[str] = res.stdout.split("Streams:")[1].splitlines()
+    if "Streams:" in stdout:
+        streams: list[str] = stdout.split("Streams:")[1].splitlines()
         ignored = False
         for line in streams:
             if line and not line.startswith(" "):
@@ -213,9 +219,10 @@ def check_audio() -> bool:
 
 def check_inhibitor() -> bool:
     global inhibited
-    res: subprocess.CompletedProcess[str] = t2.run_command(["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListInhibitors"])
+    cmd = "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager ListInhibitors"
+    stdout, _, _ = t2.execute_command(cmd)
     pattern = r'"idle"\s+"[^"]*"\s+"[^"]*"\s+"block"'
-    is_inhibited = bool(re.search(pattern, res.stdout))
+    is_inhibited = bool(re.search(pattern, stdout))
     if is_inhibited != inhibited:
         inhibited = is_inhibited
         _log("+", f"Inhibitor: {'Detected' if inhibited else 'Not Detected'}")
@@ -260,8 +267,8 @@ def on_sleep(con, sender, path, iface, sig, p, d) -> bool:
     if going_sleep:
         _log("!", "Suspending...")
         enter_idle()
-        t2.run_command("qs -c noctalia-shell ipc call lockScreen lock", shell=True)  # Lock the screen before-sleep
-        t2.run_command("niri msg action power-off-monitors")  # Explicitly turn off?
+        t2.execute_command("qs -c noctalia-shell ipc call lockScreen lock")  # Lock the screen before-sleep
+        t2.execute_command("niri msg action power-off-monitors")  # Explicitly turn off?
         return True
     return True  # Can add else: to revert power-off-monitors action if required
     #  TODO: No multi-monitor supported yet?

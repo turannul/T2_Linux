@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-script_src = "suspendfix"
+script_src = "suspendfix.py"
 script_dst = "suspendfix"
 service_name = "suspend_fix_T2.service"
 install_bin = "/usr/local/sbin"

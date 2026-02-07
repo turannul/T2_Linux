@@ -19,9 +19,9 @@ import sys
 
 scripts: list[str] = [
     "brightness_common.py",
-    "bdp",
-    "bkb",
-    "btb"
+    "bdp.py",
+    "bkb.py",
+    "btb.py"
 ]
 
 install_dir = "/usr/local/sbin"
@@ -50,7 +50,9 @@ def install_sudo_exception() -> None:
 
     content = ""
     for script in scripts:
-        content += f"{actual_user} ALL=NOPASSWD: {os.path.join(install_dir, script)}\n"
+        # Strip .py for the command name in sudoers if it's not a library
+        cmd_name = script.replace(".py", "") if script != "brightness_common.py" else script
+        content += f"{actual_user} ALL=NOPASSWD: {os.path.join(install_dir, cmd_name)}\n"
 
     try:
         with open(exception_file, "w") as f:
@@ -91,7 +93,9 @@ def install() -> None:
 
     for script in scripts:
         src: str = os.path.join(script_dir, script)
-        dst: str = os.path.join(install_dir, script)
+        # Strip .py for the installed command name
+        dst_name = script.replace(".py", "") if script != "brightness_common.py" else script
+        dst: str = os.path.join(install_dir, dst_name)
 
         if os.path.exists(src):
             print(f"Installing {script} to {dst}...")
@@ -115,7 +119,9 @@ def install() -> None:
 
 def uninstall() -> None:
     for script in scripts:
-        dst: str = os.path.join(install_dir, script)
+        # Strip .py for the command name to remove
+        dst_name = script.replace(".py", "") if script != "brightness_common.py" else script
+        dst: str = os.path.join(install_dir, dst_name)
         if os.path.exists(dst):
             print(f"Removing {dst}...")
             os.remove(dst)
