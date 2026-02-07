@@ -14,6 +14,7 @@
 
 import os
 import sys
+from typing import Literal, Any
 
 # --- Colors ---
 cRed = '\033[0;31m'
@@ -27,7 +28,7 @@ e_failure = 1
 e_invalid_usage = 2
 
 
-def find_device_path(paths):
+def find_device_path(paths) -> Any | None:
     """Finds the first existing directory from a list of paths."""
     for path in paths:
         if os.path.isdir(path):
@@ -35,7 +36,7 @@ def find_device_path(paths):
     return None
 
 
-def validate_device_path(device_path):
+def validate_device_path(device_path) -> bool:
     """Validates if the device path exists."""
     if not device_path or not os.path.isdir(device_path):
         print(f"{cRed}Error: Device path '{device_path}' does not exist.{cReset}", file=sys.stderr)
@@ -43,7 +44,7 @@ def validate_device_path(device_path):
     return True
 
 
-def resolve_source_file(device_path, source_file=None):
+def resolve_source_file(device_path, source_file=None) -> Any | Literal['actual_brightness'] | Literal['brightness']:
     """Resolves the brightness source file."""
     if source_file and os.path.isfile(os.path.join(device_path, source_file)):
         return source_file
@@ -53,7 +54,7 @@ def resolve_source_file(device_path, source_file=None):
         return "brightness"
 
 
-def get_max_brightness(device_path):
+def get_max_brightness(device_path) -> int:
     """Reads the max_brightness value."""
     try:
         with open(os.path.join(device_path, "max_brightness"), "r") as f:
@@ -62,7 +63,7 @@ def get_max_brightness(device_path):
         return 0
 
 
-def get_current_brightness(device_path, source_file=None):
+def get_current_brightness(device_path, source_file=None) -> int:
     """Reads the current brightness value."""
     resolved_source = resolve_source_file(device_path, source_file)
     try:
@@ -72,14 +73,14 @@ def get_current_brightness(device_path, source_file=None):
         return 0
 
 
-def calculate_percentage(current, max_val):
+def calculate_percentage(current, max_val) -> int:
     """Calculates the percentage of brightness."""
     if max_val == 0:
         return 0
     return int((current * 100) / max_val)
 
 
-def commit_brightness(value, device_path, old_label, new_label):
+def commit_brightness(value, device_path, old_label, new_label) -> bool:
     """Writes the new brightness value and prints the change."""
     try:
         # Using tee-like behavior manually, but just writing to file is enough for logic
@@ -101,7 +102,7 @@ def commit_brightness(value, device_path, old_label, new_label):
         return False
 
 
-def validate_percentage(input_str, device_path, source_file):
+def validate_percentage(input_str, device_path, source_file) -> int:
     """Validates the input percentage string."""
     # Remove % if present
     clean_input = input_str.replace('%', '')
@@ -113,32 +114,32 @@ def validate_percentage(input_str, device_path, source_file):
 
         current_pct = show_brightness(device_path, source_file, print_output=False)
         print(f"{cGreen}Current brightness: {current_pct}%{cReset}")
-        return None
+        return -1
 
     val = int(clean_input)
     if val > 100:
         print(f"{cRed}Error: Percentage cannot be greater than 100.{cReset}", file=sys.stderr)
-        return None
+        return -1
 
     return val
 
 
-def validate_raw_input(input_str, max_value):
+def validate_raw_input(input_str, max_value) -> int:
     """Validates raw integer input."""
     if not input_str.isdigit():
         script_name = os.path.basename(sys.argv[0])
         print(f"{cYellow}Usage: {script_name} <brightness> [0-{max_value}]{cReset}", file=sys.stderr)
-        return None
+        return -1
 
     val = int(input_str)
     if val > max_value:
         print(f"{cRed}Error: Maximum brightness is {max_value}.{cReset}", file=sys.stderr)
-        return None
+        return -1
 
     return val
 
 
-def touchbar_calculate_new_level(percentage):
+def touchbar_calculate_new_level(percentage) -> Literal[0] | Literal[1] | Literal[2]:
     """Calculates stepped level for touchbar."""
     if percentage == 0:
         return 0
@@ -148,7 +149,7 @@ def touchbar_calculate_new_level(percentage):
         return 2
 
 
-def touchbar_get_label(level):
+def touchbar_get_label(level) -> Literal['0 (Off)'] | Literal['1 (Dim)'] | Literal['2 (Bright)']:
     """Returns label for touchbar level."""
     if level == 0:
         return "0 (Off)"
@@ -158,7 +159,7 @@ def touchbar_get_label(level):
         return "2 (Bright)"
 
 
-def show_brightness(device_path, brightness_source_file=None, print_output=True):
+def show_brightness(device_path, brightness_source_file=None, print_output=True) -> int:
     """Displays current brightness percentage."""
     if not validate_device_path(device_path):
         sys.exit(e_failure)
@@ -173,7 +174,7 @@ def show_brightness(device_path, brightness_source_file=None, print_output=True)
     return pct
 
 
-def apply_brightness_percentage(input_str, device_path, brightness_source_file=None):
+def apply_brightness_percentage(input_str, device_path, brightness_source_file=None) -> None:
     """Applies brightness based on percentage."""
     if not validate_device_path(device_path):
         sys.exit(e_failure)
@@ -193,7 +194,7 @@ def apply_brightness_percentage(input_str, device_path, brightness_source_file=N
     commit_brightness(new_level, device_path, f"{old_pct}%", f"{percentage}%")
 
 
-def apply_brightness_stepped(input_str, device_path, brightness_source_file=None):
+def apply_brightness_stepped(input_str, device_path, brightness_source_file=None) -> None:
     """Applies stepped brightness (used for touchbar)."""
     if not validate_device_path(device_path):
         sys.exit(e_failure)
@@ -211,7 +212,7 @@ def apply_brightness_stepped(input_str, device_path, brightness_source_file=None
     commit_brightness(new_level, device_path, old_label, new_label)
 
 
-def apply_brightness_raw(input_str, device_path, brightness_source_file=None):
+def apply_brightness_raw(input_str, device_path, brightness_source_file=None) -> None:
     """Applies raw brightness value."""
     if not validate_device_path(device_path):
         sys.exit(e_failure)

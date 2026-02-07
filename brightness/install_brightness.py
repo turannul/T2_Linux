@@ -16,7 +16,7 @@ import os
 import shutil
 import sys
 
-scripts = [
+scripts: list[str] = [
     "brightness_common.py",
     "bdp",
     "bkb",
@@ -27,19 +27,19 @@ install_dir = "/usr/local/sbin"
 exception_file = "/etc/sudoers.d/0-brightness-control"
 
 
-def check_sudo():
+def check_sudo() -> None:
     if os.geteuid() != 0:
-        args = ["sudo", sys.executable] + sys.argv
+        args: list[str] = ["sudo", sys.executable] + sys.argv
         os.execvp("sudo", args)
 
 
-def install_sudo_exception():
+def install_sudo_exception() -> None:
     if os.path.exists(exception_file):
         print(f"Removing old exception file: {exception_file}")
         os.remove(exception_file)
 
-    sudo_user = os.environ.get("SUDO_USER")
-    actual_user = sudo_user if sudo_user else os.environ.get("USER")
+    sudo_user: str | None = os.environ.get("SUDO_USER")
+    actual_user: str | None = sudo_user if sudo_user else os.environ.get("USER")
 
     if not actual_user:
         print("Error: Could not determine user.")
@@ -60,13 +60,13 @@ def install_sudo_exception():
         print(f"Error creating sudoers exception: {e}")
 
 
-def uninstall_sudo_exception():
+def uninstall_sudo_exception() -> None:
     if os.path.exists(exception_file):
         print(f"Removing exception file: {exception_file}")
         os.remove(exception_file)
 
 
-def install_common():
+def install_common() -> None:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     common_src = os.path.join(repo_root, "common", "t2.py")
     common_lib_dir = "/usr/local/lib/t2linux"
@@ -79,15 +79,15 @@ def install_common():
         print("Warning: Common library not found in repo.")
 
 
-def install():
+def install() -> None:
     # Resolve script_dir to the actual location of this script
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+    script_dir: str = os.path.dirname(os.path.realpath(__file__))
 
     install_common()
 
     for script in scripts:
-        src = os.path.join(script_dir, script)
-        dst = os.path.join(install_dir, script)
+        src: str = os.path.join(script_dir, script)
+        dst: str = os.path.join(install_dir, script)
 
         if os.path.exists(src):
             print(f"Installing {script} to {dst}...")
@@ -109,9 +109,9 @@ def install():
     print("Installed successfully.")
 
 
-def uninstall():
+def uninstall() -> None:
     for script in scripts:
-        dst = os.path.join(install_dir, script)
+        dst: str = os.path.join(install_dir, script)
         if os.path.exists(dst):
             print(f"Removing {dst}...")
             os.remove(dst)
@@ -120,7 +120,7 @@ def uninstall():
     print("Uninstalled successfully.")
 
 
-def main():
+def main() -> None:
     check_sudo()
 
     if len(sys.argv) < 2:

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-import datetime
 import logging
 import os
 import subprocess
 import sys
-from typing import List, Optional, Union
+from typing import List, Union
 
 
-def setup_logging(log_file: str, name: str = "T2Linux", level: int = logging.INFO):
+def setup_logging(log_file: str, name: str = "T2Linux", level: int = logging.INFO) -> logging.Logger:
     """
     Sets up and returns a standard logger that logs to both stdout and a file.
     """
@@ -41,7 +40,7 @@ def setup_logging(log_file: str, name: str = "T2Linux", level: int = logging.INF
     return logger
 
 
-def log_event(logger: logging.Logger, level_char: str, message: str):
+def log_event(logger: logging.Logger, level_char: str, message: str) -> None:
     """
     Maps level characters to logging levels and logs the message.
     """
@@ -63,7 +62,7 @@ def log_event(logger: logging.Logger, level_char: str, message: str):
         logger.log(level, message)
 
 
-def check_root():
+def check_root() -> None:
     """
     Checks if root and re-executes with sudo if not.
     """
@@ -77,7 +76,7 @@ def check_root():
         os.execvp("sudo", cmd)
 
 
-def run_command(cmd: Union[str, List[str]], shell: bool = False, check: bool = False):
+def run_command(cmd: Union[str, List[str]], shell: bool = False, check: bool = False) -> subprocess.CompletedProcess[str]:
     """
     Wrapper for subprocess.run.
     """

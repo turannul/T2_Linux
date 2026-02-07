@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 from gi.repository import Gio, GLib  # type: ignore
+from typing import Literal
 
 # Require PyGObject
 gi.require_version("GLib", "2.0")
@@ -47,11 +48,11 @@ inhibited = False
 target_user = None
 
 
-def _log(char, msg):
+def _log(char, msg) -> None:
     t2.log_event(logger, char, msg)
 
 
-def setup_env():
+def setup_env() -> None:
     """Sets up XDG_RUNTIME_DIR, WAYLAND_DISPLAY, and DBUS_SESSION_BUS_ADDRESS."""
     try:
         if all(k in os.environ for k in ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"]):
@@ -81,7 +82,7 @@ def setup_env():
         logger.error(f"Failed to setup environment: {e}")
 
 
-def get_target_user():
+def get_target_user() -> str | None:
     try:
         import pwd
         return pwd.getpwuid(1000).pw_name
@@ -89,16 +90,16 @@ def get_target_user():
         return None
 
 
-target_user = get_target_user()
+target_user: str | None = get_target_user()
 
 
-def run_as_user(cmd_list, scope=True):
+def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
     if not target_user:
         return subprocess.Popen(cmd_list)
 
     uid = 1000
-    runtime_dir = f"/run/user/{uid}"
-    prefix = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
+    runtime_dir: str = f"/run/user/{uid}"
+    prefix: list[str] = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
 
     if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
         prefix.append(f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}")
@@ -110,23 +111,23 @@ def run_as_user(cmd_list, scope=True):
     return subprocess.Popen(prefix + cmd_list)
 
 
-def run_cmd(cmd, shell=True):
-    res = t2.run_command(cmd, shell=shell)
+def run_cmd(cmd, shell=True) -> str:
+    res: subprocess.CompletedProcess[str] = t2.run_command(cmd, shell=shell)
     if res.returncode != 0:
         _log("-", f"Error running '{cmd}': {res.stderr}")
     return res.stdout.strip()
 
 
 # --- State ---
-def save_power_profile():
-    curr = run_cmd("powerprofilesctl get")
+def save_power_profile() -> None:
+    curr: str = run_cmd("powerprofilesctl get")
     if curr and curr != "power-saver":
         os.makedirs(state_dir, exist_ok=True)
         with open(power_profile_state, "w") as f:
             f.write(curr)
 
 
-def restore_power_profile():
+def restore_power_profile() -> None:
     profile = "balanced"
     if os.path.exists(power_profile_state):
         with open(power_profile_state, "r") as f:
@@ -134,23 +135,23 @@ def restore_power_profile():
     run_cmd(f"qs -c noctalia-shell ipc call powerProfile set {profile}")
 
 
-def save_bkb():
-    curr = run_cmd("bkb -s")
+def save_bkb() -> None:
+    curr: str = run_cmd("bkb -s")
     if curr and curr != "0":
         os.makedirs(state_dir, exist_ok=True)
         with open(kbd_brightness_state, "w") as f:
             f.write(curr)
 
 
-def restore_bkb():
+def restore_bkb() -> None:
     if os.path.exists(kbd_brightness_state):
         with open(kbd_brightness_state, "r") as f:
-            val = f.read().strip()
+            val: str = f.read().strip()
             if val:
                 run_cmd(f"bkb {val}")
 
 
-def enter_idle():
+def enter_idle() -> None:
     _log("+", "Entering idle mode...")
     save_power_profile()
     save_bkb()
@@ -158,25 +159,25 @@ def enter_idle():
     run_cmd("bkb 0")
 
 
-def exit_idle():
+def exit_idle() -> None:
     _log("+", "Exiting idle mode...")
     restore_power_profile()
     restore_bkb()
 
 
-def get_self_cmd(action):
+def get_self_cmd(action) -> str:
     return f"{sys.executable} {os.path.abspath(__file__)} {action}"
 
 
 # --- Checks ---
-def check_ac():
+def check_ac() -> Literal[True]:
     global on_ac
     ac_path = "/sys/class/power_supply/ADP1/online"
     if os.path.exists(ac_path):
         with open(ac_path, "r") as f:
-            is_ac = (f.read().strip() == "1")
+            is_ac: bool = (f.read().strip() == "1")
             if is_ac != on_ac:
-                on_ac = is_ac
+                on_ac: bool = is_ac
                 _log("+", f"Power Source: {'AC' if is_ac else 'Battery'}")
                 update_timeouts()
     return True
@@ -184,14 +185,14 @@ def check_ac():
 
 def check_audio():
     global audio_playing
-    res = t2.run_command("wpctl status", shell=True)
+    res: subprocess.CompletedProcess[str] = t2.run_command("wpctl status", shell=True)
     is_playing = False
     if "Streams:" in res.stdout:
-        streams = res.stdout.split("Streams:")[1].splitlines()
+        streams: list[str] = res.stdout.split("Streams:")[1].splitlines()
         ignored = False
         for line in streams:
             if line and not line.startswith(" "):
-                ignored = "cava" in line.lower()
+                ignored: bool = "cava" in line.lower()
             elif "[active]" in line and not ignored and "monitor" not in line.lower():
                 is_playing = True
                 break
@@ -202,20 +203,19 @@ def check_audio():
     return True
 
 
-def check_inhibitor():
+def check_inhibitor() -> Literal[True]:
     global inhibited
-    res = t2.run_command(["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1",
-                          "org.freedesktop.login1.Manager", "ListInhibitors"])
+    res: subprocess.CompletedProcess[str] = t2.run_command(["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListInhibitors"])
     pattern = r'"idle"\s+"[^"]*"\s+"[^"]*"\s+"block"'
     is_inhibited = bool(re.search(pattern, res.stdout))
     if is_inhibited != inhibited:
-        inhibited = is_inhibited
+        inhibited: bool = is_inhibited
         _log("#", f"Inhibitor: {'Detected' if inhibited else 'Cleared'}")
         update_timeouts()
     return True
 
 
-def update_timeouts():
+def update_timeouts() -> None:
     global timeout_process
     if timeout_process:
         timeout_process.terminate()
@@ -239,13 +239,12 @@ def update_timeouts():
     if not audio_playing:
         base += ["timeout", str(t['sleep']), "systemctl suspend"]
 
-    _log("+", f"Timeouts updated: lock={t['lock']}s, screen={t['screen']}s, "
-         f"suspend={'OFF' if audio_playing else f'{t['sleep']}s'}")
+    _log("+", f"Timeouts updated: lock={t['lock']}s, screen={t['screen']}s, "f"suspend={'OFF' if audio_playing else f'{t['sleep']}s'}")
 
     timeout_process = run_as_user(base)
 
 
-def on_sleep(connection, sender, path, iface, signal, params, data):
+def on_sleep(connection, sender, path, iface, signal, params, data) -> None:
     if params.unpack()[0]:
         _log("!", "Suspending...")
         enter_idle()
@@ -256,17 +255,15 @@ def on_sleep(connection, sender, path, iface, signal, params, data):
         exit_idle()
 
 
-def start_daemon():
+def start_daemon() -> None:
     t2.check_root()
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-        bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
-                             "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, on_sleep, None)
+        bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep", "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, on_sleep, None)
     except Exception as e:
         _log("-", f"DBus Error: {e}")
 
-    run_as_user(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock",
-                 "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
+    run_as_user(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock", "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
 
     check_ac()
     check_audio()

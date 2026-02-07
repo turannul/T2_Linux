@@ -11,14 +11,14 @@ install_bin = "/usr/local/sbin"
 install_svc = "/etc/systemd/system"
 
 
-def check_sudo():
+def check_sudo() -> None:
     if os.geteuid() != 0:
         os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
 
 
-def install_common():
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    common_src = os.path.join(repo_root, "common", "t2.py")
+def install_common() -> None:
+    repo_root: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    common_src: str = os.path.join(repo_root, "common", "t2.py")
     common_dir = "/usr/local/lib/t2linux"
 
     if os.path.exists(common_src):
@@ -29,12 +29,12 @@ def install_common():
         print("Warning: Common library not found in repo.")
 
 
-def install():
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+def install() -> None:
+    script_dir: str = os.path.dirname(os.path.realpath(__file__))
     install_common()
 
-    src = os.path.join(script_dir, script_src)
-    dst = os.path.join(install_bin, script_dst)
+    src: str = os.path.join(script_dir, script_src)
+    dst: str = os.path.join(install_bin, script_dst)
     if os.path.exists(src):
         print(f"Installing {script_src} to {dst}...")
         shutil.copy(src, dst)
@@ -43,8 +43,8 @@ def install():
         print(f"Error: {script_src} not found.")
         return
 
-    svc_src = os.path.join(script_dir, service_name)
-    svc_dst = os.path.join(install_svc, service_name)
+    svc_src: str = os.path.join(script_dir, service_name)
+    svc_dst: str = os.path.join(install_svc, service_name)
     if os.path.exists(svc_src):
         print(f"Installing {service_name} to {svc_dst}...")
         shutil.copy(svc_src, svc_dst)
@@ -56,9 +56,9 @@ def install():
     print("Installation complete.")
 
 
-def uninstall():
-    dst = os.path.join(install_bin, script_dst)
-    svc_dst = os.path.join(install_svc, service_name)
+def uninstall() -> None:
+    dst: str = os.path.join(install_bin, script_dst)
+    svc_dst: str = os.path.join(install_svc, service_name)
 
     if os.path.exists(svc_dst):
         print(f"Disabling and removing {service_name}...")
@@ -73,7 +73,7 @@ def uninstall():
     print("Uninstallation complete.")
 
 
-def main():
+def main() -> None:
     check_sudo()
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} {{install|uninstall}}")

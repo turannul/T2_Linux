@@ -19,13 +19,7 @@ jobs:
     - uses: actions/checkout@v4
         
     - name: Run flake8
-      run: |
-        # Find all .py files and specific extensionless scripts, then run flake8
-        fd -e py -H . -x flake8
-        fd 'suspendfix|WiFi-Monitor|bdp|bkb|btb' . -x flake8
+      run: fd --hidden --no-ignore --ignore-case --follow --full-path --extension py --exec flake8
       
     - name: Run pyright
-      run: |
-        # Find all .py files and specific extensionless scripts, then run pyright
-        fd -e py -H . -x pyright
-        fd 'suspendfix|WiFi-Monitor|bdp|bkb|btb' . -x pyright
+      run: fd --hidden --no-ignore --ignore-case --follow --full-path --extension py --exec pyright
