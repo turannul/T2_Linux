@@ -1,1 +1,1 @@
-../brightness/install_brightness.py
+../src/brightness/install_brightness.py

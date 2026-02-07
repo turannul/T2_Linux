@@ -1,1 +1,1 @@
-../idle/install_idle.py
+../src/idle/install_idle.py

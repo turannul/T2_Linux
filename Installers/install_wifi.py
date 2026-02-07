@@ -1,1 +1,1 @@
-../wifi/install_wifi.py
+../src/wifi/install_wifi.py

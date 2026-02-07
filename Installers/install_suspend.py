@@ -1,1 +1,1 @@
-../suspend/install_suspend.py
+../src/suspend/install_suspend.py
