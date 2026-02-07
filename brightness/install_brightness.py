@@ -16,15 +16,15 @@ import os
 import shutil
 import sys
 
-SCRIPTS = [
+scripts = [
     "brightness_common.py",
     "bdp",
     "bkb",
     "btb"
 ]
 
-INSTALL_DIR = "/usr/local/bin"
-EXCEPTION_FILE = "/etc/sudoers.d/0-brightness-control"
+install_dir = "/usr/local/sbin"
+exception_file = "/etc/sudoers.d/0-brightness-control"
 
 
 def check_sudo():
@@ -34,9 +34,9 @@ def check_sudo():
 
 
 def install_sudo_exception():
-    if os.path.exists(EXCEPTION_FILE):
-        print(f"Removing old exception file: {EXCEPTION_FILE}")
-        os.remove(EXCEPTION_FILE)
+    if os.path.exists(exception_file):
+        print(f"Removing old exception file: {exception_file}")
+        os.remove(exception_file)
 
     sudo_user = os.environ.get("SUDO_USER")
     actual_user = sudo_user if sudo_user else os.environ.get("USER")
@@ -48,30 +48,46 @@ def install_sudo_exception():
     print(f"Creating sudoers exception... for user: {actual_user}")
 
     content = ""
-    for script in SCRIPTS:
-        content += f"{actual_user} ALL=NOPASSWD: {os.path.join(INSTALL_DIR, script)}\n"
+    for script in scripts:
+        content += f"{actual_user} ALL=NOPASSWD: {os.path.join(install_dir, script)}\n"
 
     try:
-        with open(EXCEPTION_FILE, "w") as f:
+        with open(exception_file, "w") as f:
             f.write(content)
-        os.chmod(EXCEPTION_FILE, 0o440)
+        os.chmod(exception_file, 0o440)
         print("Password exception created successfully. || Commands should not require a password now.")
     except Exception as e:
         print(f"Error creating sudoers exception: {e}")
 
 
 def uninstall_sudo_exception():
-    if os.path.exists(EXCEPTION_FILE):
-        print(f"Removing exception file: {EXCEPTION_FILE}")
-        os.remove(EXCEPTION_FILE)
+    if os.path.exists(exception_file):
+        print(f"Removing exception file: {exception_file}")
+        os.remove(exception_file)
+
+
+def install_common():
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    common_src = os.path.join(repo_root, "common", "t2.py")
+    common_lib_dir = "/usr/local/lib/t2linux"
+
+    if os.path.exists(common_src):
+        print(f"Installing common library to {common_lib_dir}...")
+        os.makedirs(common_lib_dir, exist_ok=True)
+        shutil.copy(common_src, os.path.join(common_lib_dir, "t2.py"))
+    else:
+        print("Warning: Common library not found in repo.")
 
 
 def install():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Resolve script_dir to the actual location of this script
+    script_dir = os.path.dirname(os.path.realpath(__file__))
 
-    for script in SCRIPTS:
+    install_common()
+
+    for script in scripts:
         src = os.path.join(script_dir, script)
-        dst = os.path.join(INSTALL_DIR, script)
+        dst = os.path.join(install_dir, script)
 
         if os.path.exists(src):
             print(f"Installing {script} to {dst}...")
@@ -87,15 +103,15 @@ def install():
                 print(f"Warning: Failed to chown {dst}: {e}")
 
         else:
-            print(f"Warning: {script} not found in current directory.")
+            print(f"Warning: {src} not found.")
 
     install_sudo_exception()
     print("Installed successfully.")
 
 
 def uninstall():
-    for script in SCRIPTS:
-        dst = os.path.join(INSTALL_DIR, script)
+    for script in scripts:
+        dst = os.path.join(install_dir, script)
         if os.path.exists(dst):
             print(f"Removing {dst}...")
             os.remove(dst)

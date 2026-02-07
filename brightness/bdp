@@ -16,18 +16,23 @@ import brightness_common
 import os
 import sys
 
-# Add current directory to sys.path to import brightness_common
-# Assuming the script and the common module are in the same directory
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(script_dir)
+# import common utils
+sys.path.append("/usr/local/lib/t2linux")
+try:
+    import t2
+except ImportError:
+    # fallback for dev environment
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(os.path.join(script_dir, "..", "common"))
+    try:
+        import t2
+    except ImportError:
+        print("Error: Could not import t2.py.")
+        sys.exit(1)
 
 
 def main():
-    # Sudo check
-    if os.geteuid() != 0:
-        # Re-execute with sudo
-        args = ["sudo", sys.executable] + sys.argv
-        os.execvp("sudo", args)
+    t2.check_root()
 
     device_paths = [
         "/sys/class/backlight/intel_backlight",

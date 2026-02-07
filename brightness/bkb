@@ -3,7 +3,7 @@
 #  bkb
 #  T2_Linux
 #
-#  Created by turannul on 07/12/2025.
+#  Created by turannul on 12/12/2025.
 #  Rewritten in Python on 07/02/2026.
 #
 #  This program is free software; you can redistribute it and/or modify
@@ -16,40 +16,45 @@ import brightness_common
 import os
 import sys
 
-# Add current directory to sys.path to import brightness_common
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(script_dir)
+# import common utils
+sys.path.append("/usr/local/lib/t2linux")
+try:
+    import t2
+except ImportError:
+    # fallback for dev environment
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(os.path.join(script_dir, "..", "common"))
+    try:
+        import t2
+    except ImportError:
+        print("Error: Could not import t2.py.")
+        sys.exit(1)
 
 
 def main():
-    if os.geteuid() != 0:
-        args = ["sudo", sys.executable] + sys.argv
-        os.execvp("sudo", args)
+    t2.check_root()
 
     device_paths = [
-        "/sys/class/leds/apple::kbd_backlight",
-        "/sys/class/leds/smc::kbd_backlight"
+        "/sys/class/leds/apple::kbd_backlight"
     ]
 
     device_path = brightness_common.find_device_path(device_paths)
 
     if not device_path:
         print(f"{brightness_common.cRed}Error: No supported keyboard backlight found.{brightness_common.cReset}", file=sys.stderr)
-        sys.exit(brightness_common.e_failure)
+        sys.exit(brightness_common.e_invalid_usage)
 
     if len(sys.argv) < 2:
         print(f"{brightness_common.cYellow}Usage: {os.path.basename(sys.argv[0])} <percentage> | --show | -s{brightness_common.cReset}", file=sys.stderr)
         sys.exit(brightness_common.e_invalid_usage)
 
     arg = sys.argv[1]
-    # bkb explicitly passed "brightness" as source file in bash script
-    source_file = "brightness"
 
     if arg == "--show" or arg == "-s":
-        brightness_common.show_brightness(device_path, source_file)
+        brightness_common.show_brightness(device_path)
         sys.exit(0)
 
-    brightness_common.apply_brightness_percentage(arg, device_path, source_file)
+    brightness_common.apply_brightness_percentage(arg, device_path)
 
 
 if __name__ == "__main__":
