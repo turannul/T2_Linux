@@ -15,7 +15,6 @@ import gi
 import logging
 import os
 import re
-import signal
 import subprocess
 import sys
 import t2
@@ -249,15 +248,18 @@ def update_timeouts() -> None:
     timeout_process = run_as_user(base)
 
 
-def on_sleep(connection, sender, path, iface, signal, params, data) -> None:
-    if params.unpack()[0]:
+def on_sleep(con, sender, path, iface, sig, p, d) -> bool:
+    _, _, _, _, _, _ = con, sender, path, iface, sig, d  # Discard useless info, meantime make pyright happy.
+    going_sleep = bool(p.unpack()[0])
+    # Current issue where going_sleep signals correct | but screen do light up. a few times?
+    if going_sleep:
         _log("!", "Suspending...")
         enter_idle()
-        t2.run_command("qs -c noctalia-shell ipc call lockScreen lock", shell=True)
-    else:
-        _log("!", "Resuming...")
-        t2.run_command("niri msg action power-on-monitors", shell=True)
-        exit_idle()
+        t2.run_command("qs -c noctalia-shell ipc call lockScreen lock", shell=True)  # Lock the screen before-sleep
+        t2.run_command("niri msg action power-off-monitors")  # Explicitly turn off?
+        return True
+    return True  # Can add else: to revert power-off-monitors action if required
+    #  TODO: No multi-monitor supported yet?
 
 
 def start_daemon() -> None:
@@ -284,7 +286,6 @@ def start_daemon() -> None:
 
 if __name__ == "__main__":
     setup_env()
-    signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
     if len(sys.argv) > 1:
         if sys.argv[1] == "idle":
             enter_idle()
