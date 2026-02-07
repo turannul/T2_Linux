@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+#
+#  t2.py
+#  T2_Linux
+#
+#  Created by turannul on 07/02/2026.
+#  Rewritten in Python on 07/02/2026.
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; version 2 of the License.
+#
+#  See the LICENSE file for more details.
+
 import logging
 import os
 import subprocess
