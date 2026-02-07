@@ -14,13 +14,13 @@ gi.require_version("Gio", "2.0")
 # import common utils
 sys.path.append("/usr/local/lib/t2linux")
 try:
-    import t2
+    from common import t2
 except ImportError:
     # fallback for dev environment
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.append(os.path.join(script_dir, "..", "common"))
+    sys.path.append(os.path.join(script_dir, ".."))
     try:
-        import t2
+        from common import t2
     except ImportError:
         print("Error: Could not import t2.py.")
         sys.exit(1)
@@ -51,9 +51,38 @@ def _log(char, msg):
     t2.log_event(logger, char, msg)
 
 
+def setup_env():
+    """Sets up XDG_RUNTIME_DIR, WAYLAND_DISPLAY, and DBUS_SESSION_BUS_ADDRESS."""
+    try:
+        if all(k in os.environ for k in ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"]):
+            return
+
+        uid = 1000
+        runtime_dir = f"/run/user/{uid}"
+
+        if os.path.exists(runtime_dir):
+            if "XDG_RUNTIME_DIR" not in os.environ:
+                os.environ["XDG_RUNTIME_DIR"] = runtime_dir
+                logger.info(f"Set XDG_RUNTIME_DIR={runtime_dir}")
+
+            if "WAYLAND_DISPLAY" not in os.environ:
+                for item in os.listdir(runtime_dir):
+                    if item.startswith("wayland-") and not item.endswith(".lock"):
+                        os.environ["WAYLAND_DISPLAY"] = item
+                        logger.info(f"Set WAYLAND_DISPLAY={item}")
+                        break
+
+            if "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+                dbus_path = f"{runtime_dir}/bus"
+                if os.path.exists(dbus_path):
+                    os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={dbus_path}"
+                    logger.info(f"Set DBUS_SESSION_BUS_ADDRESS=unix:path={dbus_path}")
+    except Exception as e:
+        logger.error(f"Failed to setup environment: {e}")
+
+
 def get_target_user():
     try:
-        # Assuming single user system on UID 1000
         import pwd
         return pwd.getpwuid(1000).pw_name
     except Exception:
@@ -66,32 +95,18 @@ target_user = get_target_user()
 def run_as_user(cmd_list, scope=True):
     if not target_user:
         return subprocess.Popen(cmd_list)
-    
-    # We need to pass the environment variables to the user command
-    # sudo -E might work if we export them first, or we can just set them in the command environment if we weren't using sudo.
-    # Since we use sudo, we can use the 'env' command or pass them as KEY=VAL before the command if allowed.
-    # Better: use the 'env' argument of Popen but that only affects the sudo process itself.
-    # sudo wipes env. 
-    
-    # We will verify what variables we have.
-    uid = 1000 # hardcoded as per get_target_user logic
+
+    uid = 1000
     runtime_dir = f"/run/user/{uid}"
-    
-    # Construct command: sudo -u user XDG_RUNTIME_DIR=... DBUS...=... systemd-run ...
-    # Wait, simple env vars before command in sudo work? 
-    # "sudo -u user VAR=val cmd" -> works in some sudo versions/configs.
-    # Safer: "sudo -u user env VAR=val cmd"
-    
     prefix = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
-    
-    # Add DBUS address if available
+
     if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
         prefix.append(f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}")
-        
+
     prefix += ["systemd-run", "--user"]
     if scope:
         prefix.append("--scope")
-    
+
     return subprocess.Popen(prefix + cmd_list)
 
 
@@ -150,21 +165,6 @@ def exit_idle():
 
 
 def get_self_cmd(action):
-    # This calls this script again. Since we want the callback to run as root (to call bkb etc),
-    # we point to the installed path or this file path.
-    # If swayidle is running as user, it will execute this command as user.
-    # But this script auto-elevates if not root!
-    # So `check_root()` at start will prompt for password if run as user without NOPASSWD?
-    # No, check_root() uses `sudo` which might prompt.
-    # But we set NOPASSWD for installers/scripts? No, only brightness scripts got NOPASSWD.
-    # Wait, `idle-manager.py` is not in sudoers.
-    
-    # SOLUTION: The callbacks (enter_idle/exit_idle) don't strictly *need* root if permissions are fine.
-    # `bkb` is in /usr/local/sbin and has NOPASSWD.
-    # `qs` runs as user.
-    # `powerprofilesctl` might need polkit auth.
-    
-    # So running callbacks as user is arguably BETTER and SAFER.
     return f"{sys.executable} {os.path.abspath(__file__)} {action}"
 
 
@@ -241,8 +241,7 @@ def update_timeouts():
 
     _log("+", f"Timeouts updated: lock={t['lock']}s, screen={t['screen']}s, "
          f"suspend={'OFF' if audio_playing else f'{t['sleep']}s'}")
-    
-    # Launch swayidle as user
+
     timeout_process = run_as_user(base)
 
 
@@ -259,8 +258,6 @@ def on_sleep(connection, sender, path, iface, signal, params, data):
 
 def start_daemon():
     t2.check_root()
-    t2.setup_xdg_env(logger)
-
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
         bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
@@ -268,7 +265,6 @@ def start_daemon():
     except Exception as e:
         _log("-", f"DBus Error: {e}")
 
-    # Launch persistent swayidle as user
     run_as_user(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock",
                  "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
 
@@ -284,6 +280,7 @@ def start_daemon():
 
 
 if __name__ == "__main__":
+    setup_env()
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
     if len(sys.argv) > 1:
         if sys.argv[1] == "idle":
