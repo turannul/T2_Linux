@@ -68,8 +68,6 @@ def check_root():
     Checks if root and re-executes with sudo if not.
     """
     if os.geteuid() != 0:
-        # If the script is executable and has a shebang, we can run it directly with sudo
-        # to match NOPASSWD entries in sudoers.
         script_path = os.path.abspath(sys.argv[0])
         if os.access(script_path, os.X_OK):
             cmd = ["sudo", script_path] + sys.argv[1:]
@@ -95,10 +93,12 @@ def run_command(cmd: Union[str, List[str]], shell: bool = False, check: bool = F
 
 def setup_xdg_env(logger: Optional[logging.Logger] = None):
     """
-    Sets up XDG_RUNTIME_DIR and WAYLAND_DISPLAY for root to interact with user session.
+    Sets up XDG_RUNTIME_DIR, WAYLAND_DISPLAY, and DBUS_SESSION_BUS_ADDRESS 
+    for root to interact with user session.
     """
     try:
-        if os.environ.get("XDG_RUNTIME_DIR") and os.environ.get("WAYLAND_DISPLAY"):
+        # Trust existing env if already complete
+        if all(k in os.environ for k in ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"]):
             return
 
         uid = 1000
@@ -117,6 +117,13 @@ def setup_xdg_env(logger: Optional[logging.Logger] = None):
                         if logger:
                             logger.info(f"Set WAYLAND_DISPLAY={item}")
                         break
+            
+            if "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+                dbus_path = f"{runtime_dir}/bus"
+                if os.path.exists(dbus_path):
+                    os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={dbus_path}"
+                    if logger:
+                        logger.info(f"Set DBUS_SESSION_BUS_ADDRESS=unix:path={dbus_path}")
     except Exception as e:
         if logger:
             logger.error(f"Failed to setup environment: {e}")

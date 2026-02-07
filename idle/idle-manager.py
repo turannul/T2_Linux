@@ -44,10 +44,55 @@ timeout_process = None
 on_ac = False
 audio_playing = False
 inhibited = False
+target_user = None
 
 
 def _log(char, msg):
     t2.log_event(logger, char, msg)
+
+
+def get_target_user():
+    try:
+        # Assuming single user system on UID 1000
+        import pwd
+        return pwd.getpwuid(1000).pw_name
+    except Exception:
+        return None
+
+
+target_user = get_target_user()
+
+
+def run_as_user(cmd_list, scope=True):
+    if not target_user:
+        return subprocess.Popen(cmd_list)
+    
+    # We need to pass the environment variables to the user command
+    # sudo -E might work if we export them first, or we can just set them in the command environment if we weren't using sudo.
+    # Since we use sudo, we can use the 'env' command or pass them as KEY=VAL before the command if allowed.
+    # Better: use the 'env' argument of Popen but that only affects the sudo process itself.
+    # sudo wipes env. 
+    
+    # We will verify what variables we have.
+    uid = 1000 # hardcoded as per get_target_user logic
+    runtime_dir = f"/run/user/{uid}"
+    
+    # Construct command: sudo -u user XDG_RUNTIME_DIR=... DBUS...=... systemd-run ...
+    # Wait, simple env vars before command in sudo work? 
+    # "sudo -u user VAR=val cmd" -> works in some sudo versions/configs.
+    # Safer: "sudo -u user env VAR=val cmd"
+    
+    prefix = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
+    
+    # Add DBUS address if available
+    if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
+        prefix.append(f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}")
+        
+    prefix += ["systemd-run", "--user"]
+    if scope:
+        prefix.append("--scope")
+    
+    return subprocess.Popen(prefix + cmd_list)
 
 
 def run_cmd(cmd, shell=True):
@@ -105,6 +150,21 @@ def exit_idle():
 
 
 def get_self_cmd(action):
+    # This calls this script again. Since we want the callback to run as root (to call bkb etc),
+    # we point to the installed path or this file path.
+    # If swayidle is running as user, it will execute this command as user.
+    # But this script auto-elevates if not root!
+    # So `check_root()` at start will prompt for password if run as user without NOPASSWD?
+    # No, check_root() uses `sudo` which might prompt.
+    # But we set NOPASSWD for installers/scripts? No, only brightness scripts got NOPASSWD.
+    # Wait, `idle-manager.py` is not in sudoers.
+    
+    # SOLUTION: The callbacks (enter_idle/exit_idle) don't strictly *need* root if permissions are fine.
+    # `bkb` is in /usr/local/sbin and has NOPASSWD.
+    # `qs` runs as user.
+    # `powerprofilesctl` might need polkit auth.
+    
+    # So running callbacks as user is arguably BETTER and SAFER.
     return f"{sys.executable} {os.path.abspath(__file__)} {action}"
 
 
@@ -181,7 +241,9 @@ def update_timeouts():
 
     _log("+", f"Timeouts updated: lock={t['lock']}s, screen={t['screen']}s, "
          f"suspend={'OFF' if audio_playing else f'{t['sleep']}s'}")
-    timeout_process = subprocess.Popen(base)
+    
+    # Launch swayidle as user
+    timeout_process = run_as_user(base)
 
 
 def on_sleep(connection, sender, path, iface, signal, params, data):
@@ -206,8 +268,9 @@ def start_daemon():
     except Exception as e:
         _log("-", f"DBus Error: {e}")
 
-    subprocess.Popen(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock",
-                      "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
+    # Launch persistent swayidle as user
+    run_as_user(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock",
+                 "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
 
     check_ac()
     check_audio()
