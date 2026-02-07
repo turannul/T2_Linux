@@ -235,7 +235,7 @@ def check_inhibitor() -> Literal[True]:
     is_inhibited = bool(re.search(pattern, res.stdout))
     if is_inhibited != inhibited:
         inhibited = is_inhibited
-        _log("#", f"Inhibitor: {'Detected' if inhibited else 'Cleared'}")
+        _log("+", f"Inhibitor: {'Detected' if inhibited else 'Cleared'}")
         update_timeouts()
     return True
 
@@ -245,7 +245,7 @@ def update_timeouts() -> None:
     if timeout_process:
         timeout_process.terminate()
         timeout_process.wait()
-    if inhibited:
+    if inhibited or audio_playing:
         return
 
     mult = ac_multiplier if on_ac else 1
@@ -293,9 +293,9 @@ def start_daemon() -> None:
     check_ac()
     check_audio()
     check_inhibitor()
-    GLib.timeout_add_seconds(5, check_ac)
-    GLib.timeout_add_seconds(10, check_audio)
-    GLib.timeout_add_seconds(3, check_inhibitor)
+    GLib.timeout_add_seconds(2, check_ac)
+    GLib.timeout_add_seconds(2, check_audio)
+    GLib.timeout_add_seconds(2, check_inhibitor)
 
     _log("+", "Idle Manager Started")
     loop.run()
