@@ -62,7 +62,14 @@ def run_cmd_wrapper(cmd: List[str], check: bool = False, as_user: bool = False):
             return subprocess.CompletedProcess(cmd, 1)
         env: dict[str, str] = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = f"/run/user/{target_uid}"
-        return subprocess.run(["sudo", "-u", target_user] + cmd, capture_output=True, text=True, check=check, env=env)
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{target_uid}/bus"
+        
+        full_cmd = ["sudo", "-E", "-u", target_user] + cmd
+        _log("#", f"Running as {target_user}: {' '.join(full_cmd)}")
+        res = subprocess.run(full_cmd, capture_output=True, text=True, check=check, env=env)
+        if res.returncode != 0:
+            _log("!", f"Command failed (Code {res.returncode}): {res.stderr.strip()}")
+        return res
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
@@ -228,15 +235,10 @@ def load_sequence() -> None:
 
 def unload_sequence() -> None:
     _log("*", "Executing UNLOAD sequence...")
-    stop_service("pipewire-pulse.service", block=True, as_user=True)
-    stop_service("pipewire.socket", block=True, as_user=True)
-    stop_service("wireplumber.service", block=True, as_user=True)
-    stop_service("pipewire.service", block=True, as_user=True)
-    t2.run_command("systemctl --user status pipewire-pulse.service", shell=True)
-    t2.run_command("systemctl --user status pipewire.socket", shell=True)
-    t2.run_command("systemctl --user status pipewire.service", shell=True)
-    t2.run_command("systemctl --user status wireplumber.service", shell=True)
-    sys.exit(5)  # Stop here on purpose (debugging).
+    stop_service("pipewire-pulse.service", as_user=True)
+    stop_service("pipewire.socket", as_user=True)
+    stop_service("wireplumber.service", as_user=True)
+    stop_service("pipewire.service", as_user=True)
     stop_service("tiny-dfr.service", block=True, as_user=False)
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     unload_module("thunderbolt")
