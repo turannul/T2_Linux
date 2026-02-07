@@ -12,12 +12,19 @@
 #  See the LICENSE file for more details.
 
 import logging
+import os
 import re
 import subprocess
-import t2
+import sys
 import time
 from typing import Pattern
 
+try:
+    import t2
+except ImportError:
+    # Add parent directory to sys.path to find t2 when running from repo
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    import t2
 # initialize logger
 t2_logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
@@ -64,7 +71,7 @@ def _unload() -> bool:
         for m in reversed(modules):
             _log("+", f"Unloading module {m}...")
             # using --remove-holders to be safe, similar to modprobe --remove
-            _exec_cmd(f"modprobe --remove --remove-holders {m}")
+            _exec_cmd(f"modprobe --verbose --remove --remove-holders {m}")
         # unloaded waiting hw to power off. (5 seconds)
         time.sleep(5)
         return True
@@ -136,4 +143,7 @@ def al_is_watching() -> None:
 if __name__ == "__main__":
     # auto-elevate if not root
     t2.check_root()
-    al_is_watching()
+    _unload()
+    time.sleep(30)
+    _load()
+    # al_is_watching()

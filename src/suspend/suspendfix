@@ -16,9 +16,16 @@ import argparse
 import logging
 import os
 import subprocess
-import t2
+import sys
 import time
 from typing import Any, List, Optional
+
+try:
+    import t2
+except ImportError:
+    # Add parent directory to sys.path to find t2 when running from repo
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    import t2
 
 # constants
 version = "0.5.2"

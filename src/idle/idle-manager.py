@@ -17,8 +17,13 @@ import os
 import re
 import subprocess
 import sys
-import t2
 from gi.repository import Gio, GLib  # type: ignore
+
+try:
+    import t2
+except ImportError:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    import t2
 
 # Require PyGObject
 gi.require_version("GLib", "2.0")
