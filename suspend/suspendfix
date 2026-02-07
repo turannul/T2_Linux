@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import time
-from typing import List, Optional
+from typing import List, Optional, Any
 
 # constants
 log_file = "/var/log/suspend-fix-t2.log"
@@ -13,13 +13,13 @@ version = "0.4"
 # import common utils
 sys.path.append("/usr/local/lib/t2linux")
 try:
-    import t2
+    import t2  # type: ignore
 except ImportError:
     # fallback for dev environment
     script_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.append(os.path.join(script_dir, "..", "common"))
     try:
-        import t2
+        import t2  # type: ignore
     except ImportError:
         print("Error: Could not import t2.py.")
         sys.exit(1)
@@ -28,11 +28,11 @@ except ImportError:
 logger = t2.setup_logging(log_file, "SuspendFix")
 
 
-def _log(char, msg):
+def _log(char, msg) -> None:
     t2.log_event(logger, char, msg)
 
 
-def get_active_user():
+def get_active_user() -> tuple[None, None] | tuple[str, str]:
     try:
         output = subprocess.check_output(["loginctl", "list-users", "--no-legend"], text=True).strip()
         if not output:
@@ -50,19 +50,18 @@ def get_active_user():
 target_user, target_uid = get_active_user()
 
 
-def run_cmd_wrapper(cmd: List[str], check: bool = False, user_mode: bool = False):
+def run_cmd_wrapper(cmd: List[str], check: bool = False, user_mode: bool = False) -> subprocess.CompletedProcess[Any] | subprocess.CompletedProcess[str]:
     if user_mode:
         if not target_user:
             logger.warning(f"No active user found for command: {' '.join(cmd)}")
             return subprocess.CompletedProcess(cmd, 1)
-        env = os.environ.copy()
+        env: dict[str, str] = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = f"/run/user/{target_uid}"
-        full_cmd = ["sudo", "-u", target_user] + cmd
-        return subprocess.run(full_cmd, capture_output=True, text=True, check=check, env=env)
+        return subprocess.run(["sudo", "-u", target_user] + cmd, capture_output=True, text=True, check=check, env=env)
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
-def is_module_loaded(module_name: str):
+def is_module_loaded(module_name: str) -> bool:
     name = module_name.replace("-", "_")
     try:
         with open("/proc/modules", "r") as f:
@@ -75,7 +74,7 @@ def is_module_loaded(module_name: str):
     return False
 
 
-def load_module(module_name: str, delay: float = 0.5):
+def load_module(module_name: str, delay: float = 0.5) -> bool:
     if is_module_loaded(module_name):
         logger.debug(f"Module {module_name} is already loaded.")
         return True
@@ -92,7 +91,7 @@ def load_module(module_name: str, delay: float = 0.5):
     return False
 
 
-def unload_module(module_name: str, delay: float = 0.5):
+def unload_module(module_name: str, delay: float = 0.5) -> bool:
     if not is_module_loaded(module_name):
         logger.debug(f"Module {module_name} is not loaded.")
         return True
@@ -127,7 +126,7 @@ def stop_service(service_name: str, wait: bool = False, user_mode: bool = False)
         return False
 
 
-def start_service(service_name: str, wait: bool = False, user_mode: bool = False):
+def start_service(service_name: str, wait: bool = False, user_mode: bool = False) -> None:
     cmd = ["systemctl"]
     if user_mode:
         cmd.append("--user")
@@ -140,7 +139,7 @@ def start_service(service_name: str, wait: bool = False, user_mode: bool = False
         run_cmd_wrapper(cmd + ["restart"] + args + [service_name], user_mode=user_mode)
 
 
-def rescan_pci():
+def rescan_pci() -> None:
     _log("*", "Rescanning PCI bus...")
     try:
         with open("/sys/bus/pci/rescan", "w") as f:
@@ -149,7 +148,7 @@ def rescan_pci():
         _log("-", f"Failed to rescan PCI: {e}")
 
 
-def remove_device(device_id: str, name: Optional[str] = None):
+def remove_device(device_id: str, name: Optional[str] = None) -> bool:
     path = f"/sys/bus/pci/devices/{device_id}/remove"
     if os.path.exists(path):
         _log("*", f"Removing {name or device_id}...")
@@ -162,33 +161,31 @@ def remove_device(device_id: str, name: Optional[str] = None):
     return False
 
 
-def load_sequence():
-    _log("_", "###########################")
+def load_sequence() -> None:
     _log("*", "Executing LOAD sequence...")
-    _log("_", "###########################")
     load_module("apple-bce", 4)
     load_module("hid_appletb_bl")
     load_module("hid_appletb_kbd")
     load_module("appletbdrm")
     load_module("brcmfmac", 1)
     start_service("NetworkManager", wait=True, user_mode=False)
-    load_module("brcmfmac_wcc", 1)
     load_module("hci_bcm4377", 1)
+    start_service("bluetooth.service", wait=True, user_mode=False)
     start_service("tiny-dfr.service", wait=True, user_mode=False)
     rescan_pci()
     load_module("thunderbolt")
+    start_service("pipewire.socket", user_mode=True, wait=True)
     start_service("pipewire.service", user_mode=True, wait=True)
     start_service("wireplumber.service", user_mode=True, wait=True)
     _log("*", "LOAD sequence complete.")
 
 
-def unload_sequence():
-    _log("_", "###########################")
+def unload_sequence() -> None:
     _log("*", "Executing UNLOAD sequence...")
-    _log("_", "###########################")
-    for svc in ["wireplumber.service", "pipewire.service", "pipewire.socket"]:
-        stop_service(svc, user_mode=True, wait=True)
-    stop_service("tiny-dfr.service", wait=True)
+    stop_service("pipewire.socket", user_mode=True, wait=True)
+    stop_service("wireplumber.service", user_mode=True, wait=True)
+    stop_service("pipewire.service", user_mode=True, wait=True)
+    stop_service("tiny-dfr.service")
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     unload_module("thunderbolt")
     unload_module("appletbdrm")
@@ -202,7 +199,7 @@ def unload_sequence():
     _log("*", "UNLOAD sequence complete.")
 
 
-def main():
+def main() -> None:
     t2.check_root()
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["load", "unload", "reload", "version", "v"])
