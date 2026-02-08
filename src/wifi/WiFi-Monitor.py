@@ -11,6 +11,7 @@
 #
 #  See the LICENSE file for more details.
 
+import argparse
 import logging
 import os
 import re
@@ -33,6 +34,7 @@ except ImportError:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     import t2  # type: ignore
 
+version = "0.2.2"
 logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
 
@@ -40,9 +42,6 @@ def _log(log_level: str, event_msg: str) -> None:
     """Log a message with a specific log level format using shared logger."""
     t2.log_event(logger, log_level, event_msg)
 
-
-s_list: list[str] = ["NetworkManager", "bluetooth"]
-m_list: list[str] = ["brcmfmac_wcc", "hci_bcm4377"]
 
 # regex pattern to match fatal errors (from my own experience):
 p_list: list[str] = [
@@ -53,77 +52,29 @@ p_list: list[str] = [
 ]
 
 
-def _service_handler(s: str, a: str) -> bool:
-    """Executes a systemctl act on a specified service."""
-    try:
-        if a == "is-active":
-            _, _, rc = t2.execute_command(f"systemctl is-active --quiet {s}")
-            return rc == 0
-
-        _log("+", f"{a.capitalize()}ing Service: {s}")  # Start'ing, Stop'ing...
-        _, _, rc = t2.execute_command(f"systemctl {a} {s}")
-        return rc == 0
-    except Exception as err:
-        _log("-", f"Service handler error ({a} {s}): {err}")
-        return False
-
-
-def _module_handler(m: str, a: str) -> bool:
-    """Handles kernel module loading and unloading."""
-    try:
-        if a == "load":
-            _log("+", f"Loading module: {m}")
-            cmd = f"modprobe --verbose {m}"
-        elif a == "unload":
-            _log("+", f"Unloading module: {m}")
-            cmd = f"modprobe --verbose --remove --remove-holders {m}"
-        else:
-            return False
-
-        _, _, rc = t2.execute_command(cmd)
-        return rc == 0
-    except Exception as err:
-        _log("-", f"Module handler error ({a} {m}): {err}")
-        return False
-
-
 def _unload() -> bool:
-    """Performs hardware reset STAGE 1: Stops s_list and unloads kernel m_list."""
     try:
         _log("+", "STAGE 1: Unloading...")
         # stop service first then, unload driver.
-        s_bool = True
-        for s in reversed(s_list):
-            if not _service_handler(s, "stop"):
-                s_bool = False
-
-        for m in reversed(m_list):
-            if not _module_handler(m, "unload"):
-                s_bool = False
-
-        return s_bool
+        t2.stop_service("NetworkManager", logger, block=True)
+        t2.unload_module("brcmfmac_wcc", logger)
+        t2.stop_service("bluetooth", logger, block=True)
+        t2.unload_module("hci_bcm4377", logger)
+        return True
     except Exception as err:
         _log("-", f"Unload unsuccessful: {err}")
         return False
 
 
 def _load() -> bool:
-    """Performs hardware reset STAGE 2: Loads kernel m_list and restarts s_list."""
     try:
         _log("+", "STAGE 2: Loading...")
-        # load driver first then, [re]start service
-        s_bool = True
-        for m in m_list:
-            if not _module_handler(m, "load"):
-                s_bool = False
-
-        for s in s_list:
-            # Check if service is already running, if so do restart.
-            act = "restart" if _service_handler(s, "is-active") else "start"
-            if not _service_handler(s, act):
-                s_bool = False
-
-        return s_bool
+        # load driver then, start service
+        t2.load_module("hci_bcm4377", logger)
+        t2.start_service("bluetooth", logger, block=True)
+        t2.load_module("brcmfmac_wcc", logger)
+        t2.start_service("NetworkManager", logger, block=True)
+        return True
     except Exception as err:
         _log("-", f"Load unsuccessful: {err}")
         return False
@@ -150,8 +101,6 @@ def _reset_sequence() -> bool:
 def al_is_watching() -> None:
     """Monitors journalctl for hardware hang signatures and triggers reset."""
     _log("+", "Starting WiFi Guardian Monitor...")
-    _log("#", f"Watching for p_list: {p_list}")
-
     compiled_p_list: list[Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in p_list]
 
     try:
@@ -179,6 +128,20 @@ def al_is_watching() -> None:
         _log("!", f"Unexpected monitor error: {err}")
 
 
-if __name__ == "__main__":
+def main() -> None:
     t2.check_root()
-    al_is_watching()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=["exec", "daemon", "version", "v"])
+    args = parser.parse_args()
+    if args.action in ["version", "v"]:
+        print(version)
+    if args.action == "exec":
+        _unload()
+        time.sleep(3)
+        _load()
+    if args.action == "daemon":
+        al_is_watching()
+
+
+if __name__ == "__main__":
+    main()

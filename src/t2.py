@@ -15,7 +15,8 @@ import logging
 import os
 import subprocess
 import sys
-from typing import Tuple, Optional, Dict
+import time
+from typing import Dict, Optional, Tuple
 
 # Prevent __pycache__ creation
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -89,3 +90,177 @@ def execute_command(cmd: str, env: Optional[Dict[str, str]] = None) -> Tuple[str
     except Exception as err:
         # Re-raise explicit errors during execution setup
         raise err
+
+
+def get_active_user() -> Tuple[str, str]:
+    """
+    Identifies the active user logged into the session.
+    Returns (username, uid) or (None, None).
+    """
+    output: str = subprocess.check_output(["loginctl", "list-users", "--no-legend"], text=True).strip()
+    parts = output.splitlines()[0].split()
+    uid: str = parts[0]
+    user: str = parts[1]
+    _: str = parts[2]  # linger
+    _: str = parts[3]  # state, This could be useful later.
+    return uid, user
+
+
+def execute_command_as_user(cmd: str, user: str, uid: str, env: Optional[Dict[str, str]] = None) -> Tuple[str, str, int]:
+    """
+    Execute a command as a specific user with their DBus/XDG environment.
+    """
+    if env is None:
+        env = os.environ.copy()
+
+    env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+
+    full_cmd = f"sudo -E -u {user} {cmd}"
+    return execute_command(full_cmd, env=env)
+
+
+def is_module_loaded(module_name: str) -> bool:
+    """
+    Checks if a kernel module is loaded.
+    """
+    name = module_name.replace("-", "_")
+    try:
+        with open("/proc/modules", "r") as f:
+            for line in f:
+                if line.startswith(f"{name} "):
+                    return True
+    except Exception:
+        stdout, _, _ = execute_command("lsmod")
+        return f"\n{name} " in f"\n{stdout}"
+    return False
+
+
+def load_module(module_name: str, logger: logging.Logger, delay: float = 0.5) -> bool:
+    """
+    Loads a kernel module with retry logic and logging.
+    """
+    if is_module_loaded(module_name):
+        log_event(logger, "#", f"Module {module_name} is already loaded.")
+        return True
+
+    log_event(logger, "*", f"Loading module {module_name}...")
+    for attempt in range(1, 4):
+        _, _, code = execute_command(f"modprobe --verbose {module_name}")
+        if code == 0:
+            log_event(logger, "*", f"Module {module_name} loaded (Attempt {attempt}).")
+            time.sleep(delay)
+            return True
+        log_event(logger, "!", f"Failed to load {module_name}. Retrying... ({attempt}/3)")
+        time.sleep(1)
+    log_event(logger, "-", f"CRITICAL: Failed to load module {module_name}.")
+    return False
+
+
+def unload_module(module_name: str, logger: logging.Logger, delay: float = 0.5) -> bool:
+    """
+    Unloads a kernel module with retry logic and logging.
+    """
+    if not is_module_loaded(module_name):
+        log_event(logger, "#", f"Module {module_name} is not loaded.")
+        return True
+
+    log_event(logger, "*", f"Unloading module {module_name}...")
+    for attempt in range(1, 4):
+        _, stderr, code = execute_command(f"modprobe --verbose --remove --remove-holders {module_name}")
+
+        if code == 0 and not is_module_loaded(module_name):
+            log_event(logger, "*", f"Module {module_name} unloaded (Attempt {attempt}).")
+            time.sleep(delay)
+            return True
+        else:
+            if stderr:
+                log_event(logger, "!", f"Unload attempt {attempt} failed: {stderr}")
+        time.sleep(1)
+    log_event(logger, "-", f"CRITICAL: Failed to unload module {module_name}.")
+    return False
+
+
+def start_service(service_name: str, logger: logging.Logger, block: bool = False, as_user: bool = False) -> bool:
+    """
+    Starts or restarts a systemd service with verification and retry logic.
+    Handles 'start' vs 'restart' based on current state.
+    """
+    try:
+        cmd_base = ["systemctl"]
+        if as_user:
+            uid, user = get_active_user()
+            cmd_base.append("--user")
+            runner = lambda c: execute_command_as_user(c, user, uid)
+        else:
+            runner = execute_command
+
+        start_args = ["--no-block"] if not block else []
+        check_cmd = " ".join(cmd_base + ["is-active", "--quiet", service_name])
+
+        _, _, code = runner(check_cmd)
+        is_active = (code == 0)
+        action = "restart" if is_active else "start"
+
+        log_event(logger, "*", f"{action.capitalize()}ing {service_name}...")
+
+        for attempt in range(1, 4):
+            act_cmd = " ".join(cmd_base + [action] + start_args + [service_name])
+            runner(act_cmd)
+
+            if block:
+                _, _, code = runner(check_cmd)
+                if code == 0:
+                    log_event(logger, "+", f"Service {service_name} {action}ed successfully.")
+                    return True
+                log_event(logger, "!", f"Service {service_name} failed to {action} (Attempt {attempt}). Retrying...")
+                time.sleep(1)
+            else:
+                return True
+
+        log_event(logger, "-", f"Failed to {action} {service_name} after 3 attempts.")
+        return False
+
+    except Exception as err:
+        log_event(logger, "-", f"Something went wrong while starting {service_name}: {err}")
+        return False
+
+
+def stop_service(service_name: str, logger: logging.Logger, block: bool = False, as_user: bool = False) -> bool:
+    """
+    Stops a systemd service with verification and retry logic.
+    """
+    try:
+        cmd_base = ["systemctl"]
+        if as_user:
+            uid, user = get_active_user()
+            cmd_base.append("--user")
+            runner = lambda c: execute_command_as_user(c, user, uid)
+        else:
+            runner = execute_command
+
+        stop_args = ["--no-block"] if not block else []
+
+        log_event(logger, "*", f"Stopping {service_name}...")
+        for attempt in range(1, 4):
+            act_cmd = " ".join(cmd_base + ["stop"] + stop_args + [service_name])
+            runner(act_cmd)
+
+            if block:
+                check_cmd = " ".join(cmd_base + ["is-active", "--quiet", service_name])
+                _, _, code = runner(check_cmd)
+
+                if code != 0:
+                    log_event(logger, "+", f"Service {service_name} stopped.")
+                    return True
+                log_event(logger, "!", f"Service {service_name} still active after stop attempt {attempt}. Retrying...")
+                time.sleep(1)
+            else:
+                return True
+
+        log_event(logger, "-", f"Failed to stop {service_name} after 3 attempts.")
+        return False
+
+    except Exception as err:
+        log_event(logger, "-", f"Something went wrong while stopping {service_name}: {err}")
+        return False
