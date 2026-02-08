@@ -15,7 +15,7 @@ import logging
 import os
 import subprocess
 import sys
-from typing import List, Union, Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict
 
 # Prevent __pycache__ creation
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -82,15 +82,7 @@ def execute_command(cmd: str, env: Optional[Dict[str, str]] = None) -> Tuple[str
     Returns (stdout, stderr, exitcode).
     """
     try:
-        res = subprocess.run(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            executable='/bin/zsh',
-            env=env,
-            text=True
-        )
+        res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable='/bin/zsh', env=env, text=True)
         stdout = res.stdout.strip() if res.stdout else ""
         stderr = res.stderr.strip() if res.stderr else ""
         return stdout, stderr, res.returncode
