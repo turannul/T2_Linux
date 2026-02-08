@@ -18,8 +18,6 @@ import sys
 import time
 from typing import Dict, Optional, Tuple
 
-# Prevent __pycache__ creation
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.dont_write_bytecode = True
 
 
@@ -95,7 +93,7 @@ def execute_command(cmd: str, env: Optional[Dict[str, str]] = None) -> Tuple[str
 def get_active_user() -> Tuple[str, str]:
     """
     Identifies the active user logged into the session.
-    Returns (username, uid) or (None, None).
+    Returns (uid, username)
     """
     output: str = subprocess.check_output(["loginctl", "list-users", "--no-legend"], text=True).strip()
     parts = output.splitlines()[0].split()
