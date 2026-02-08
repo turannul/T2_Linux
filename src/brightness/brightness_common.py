@@ -16,6 +16,9 @@ import os
 import sys
 from typing import Any, Literal
 
+sys.dont_write_bytecode = True
+
+
 # --- Colors ---
 cRed = '\033[0;31m'
 cGreen = '\033[0;32m'

@@ -17,6 +17,9 @@ import shutil
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
+
+
 script_src = "WiFi-Monitor.py"
 script_dst = "WiFi-Monitor"
 service_name = "WiFi-Monitor.service"

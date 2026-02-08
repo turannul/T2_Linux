@@ -17,6 +17,9 @@ import shutil
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
+
+
 script_src = "idle-manager.py"
 script_dst = "idle-manager"
 service_name = "idle-manager.service"

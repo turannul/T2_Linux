@@ -19,16 +19,14 @@ import subprocess
 import sys
 from gi.repository import Gio, GLib  # type: ignore
 
-# Prevent __pycache__ creation
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.dont_write_bytecode = True
 
 
 try:
-    import t2
+    import t2  # type: ignore
 except ImportError:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    import t2
+    import t2  # type: ignore
 
 # Require PyGObject
 gi.require_version("GLib", "2.0")
@@ -47,6 +45,7 @@ kbd_brightness_state = os.path.join(state_dir, "kbd_brightness_state")
 
 
 # Globals
+version = "0.0.2"
 logger = t2.setup_logging("IdleManager", level=logging.DEBUG)
 loop = GLib.MainLoop()
 event_process = None

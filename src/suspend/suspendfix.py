@@ -19,18 +19,16 @@ import sys
 import time
 from typing import Optional
 
-# Prevent __pycache__ creation
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.dont_write_bytecode = True
+
 
 try:
     import t2  # type: ignore
 except ImportError:
-    # Add parent directory to sys.path to find t2 when running from repo
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     import t2  # type: ignore
 
-version = "0.5.5-3"
+version = "0.6.0"
 logger = t2.setup_logging("SuspendFix", level=logging.DEBUG)
 
 

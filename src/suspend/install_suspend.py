@@ -17,6 +17,9 @@ import shutil
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
+
+
 script_src = "suspendfix.py"
 script_dst = "suspendfix"
 service_name = "suspend_fix_T2.service"

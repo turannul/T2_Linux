@@ -16,12 +16,14 @@ import brightness_common
 import os
 import sys
 
+sys.dont_write_bytecode = True
+
+
 try:
-    import t2
+    import t2  # type: ignore
 except ImportError:
-    # Add parent directory to sys.path to find t2 when running from repo
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    import t2
+    import t2  # type: ignore
 
 
 def main() -> None:
