@@ -53,7 +53,7 @@ def _unload() -> bool:
     try:
         _log("+", "STAGE 1: Unloading...")
         # stop service first then, unload driver.
-        t2.stop_service("NetworkManager", logger, block=True)
+        t2.stop_service("systemd-networkd", logger, block=True)
         t2.unload_module("brcmfmac_wcc", logger)
         t2.stop_service("bluetooth", logger, block=True)
         t2.unload_module("hci_bcm4377", logger)
@@ -67,10 +67,10 @@ def _load() -> bool:
     try:
         _log("+", "STAGE 2: Loading...")
         # load driver then, start service
-        t2.load_module("hci_bcm4377", logger)
+        t2.load_module("hci_bcm4377", logger, delay=3)
         t2.start_service("bluetooth", logger, block=True)
         t2.load_module("brcmfmac_wcc", logger)
-        t2.start_service("NetworkManager", logger, block=True)
+        t2.start_service("systemd-networkd", logger, block=True)
         return True
     except Exception as err:
         _log("-", f"Load unsuccessful: {err}")
