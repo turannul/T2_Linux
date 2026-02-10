@@ -45,35 +45,40 @@ p_list: list[str] = [
     r"CMD_TRIGGER_SCAN.*error.*\(5\)",  # - CMD_TRIGGER_SCAN error (5): I/O Error during scan start
     r"brcmf_msgbuf_query_dcmd",  # - query_dcmd: Firmware timeout (Hang)
     r"set wpa_auth failed",  # - set wpa_auth failed: Crypto offload failure
-    r"error \(-12\)"  # - error (-12): ENOMEM (Memory allocation failure)
+    r"error \(-12\)",  # - error (-12): ENOMEM (Memory allocation failure)
+    r"failed with error -110"  # - error (-110): ETIMEDOUT (Firmware/Probe timeout) | Mostly from hci_bcm4377...
 ]
 
 
 def _unload() -> bool:
     try:
-        _log("+", "STAGE 1: Unloading...")
-        # stop service first then, unload driver.
-        t2.stop_service("systemd-networkd", logger, block=True)
-        t2.unload_module("brcmfmac_wcc", logger)
-        t2.stop_service("bluetooth", logger, block=True)
-        t2.unload_module("hci_bcm4377", logger)
+        _log("+", "STAGE 1: Stopping services...")
+        t2.stop_service("NetworkManager.service", logger, block=True, as_user=False)
+        t2.stop_service("bluetooth.service", logger, block=True, as_user=False)
+        time.sleep(3)  # Timing is varying that's the tricky part i guess.
+        _log("+", "STAGE 2: Unloading drivers...")
+        # Unload drivers in reverse dependency order
+        t2.unload_module("brcmfmac_wcc", logger, delay=3)
+        t2.unload_module("hci_bcm4377", logger, delay=3)
         return True
     except Exception as err:
-        _log("-", f"Unload unsuccessful: {err}")
+        _log("-", f"Unable to unload due: {err}")
         return False
 
 
 def _load() -> bool:
     try:
-        _log("+", "STAGE 2: Loading...")
-        # load driver then, start service
+        _log("+", "STAGE 3: Loading drivers...")
+        # Load driver then, start service
         t2.load_module("hci_bcm4377", logger, delay=3)
-        t2.start_service("bluetooth", logger, block=True)
-        t2.load_module("brcmfmac_wcc", logger)
-        t2.start_service("systemd-networkd", logger, block=True)
+        t2.load_module("brcmfmac_wcc", logger, delay=3)
+        time.sleep(3)  # Timing is varying that's the tricky part i guess.
+        _log("+", "STAGE 4: Starting services...")
+        t2.start_service("bluetooth.service", logger, block=True, as_user=False)
+        t2.start_service("NetworkManager.service", logger, block=True, as_user=False)
         return True
     except Exception as err:
-        _log("-", f"Load unsuccessful: {err}")
+        _log("-", f"Unable to load due: {err}")
         return False
 
 
@@ -82,12 +87,12 @@ def _reset_sequence() -> bool:
     n = time.time()
 
     if n - lrt < cd_sec:
-        r = int(cd_sec - (n - lrt))
-        _log("#", f"Cooldown active ({r}s remaining), skipping reset.")
+        _log("#", f"Cooldown active ({int(cd_sec - (n - lrt))}s remaining), skipping reset.")
         return False
 
     if _unload():
-        time.sleep(3)
+        _log("*", "Hardware settling (5s)...")
+        time.sleep(5)
         if _load():
             lrt = time.time()
             return True
@@ -113,8 +118,7 @@ def al_is_watching() -> None:
 
             for pattern in compiled_p_list:
                 if pattern.search(line):
-                    _log("#", f"PATTERN MATCHED: {pattern}")
-                    _log("-", f"TRIGGER MATCHED: {line.strip()}")
+                    _log("-", f"Reset trigger: {line.strip()} (Pattern: {pattern.pattern})")
                     _reset_sequence()
                     _log("+", "Reset sequence completed, monitoring for stability...")
                     break
@@ -133,9 +137,7 @@ def main() -> None:
     if args.action in ["version", "v"]:
         print(version)
     if args.action == "exec":
-        _unload()
-        time.sleep(3)
-        _load()
+        _reset_sequence()
     if args.action == "daemon":
         al_is_watching()
 
