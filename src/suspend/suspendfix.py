@@ -73,7 +73,7 @@ def load_sequence() -> None:
     t2.start_service("pipewire.socket", logger, block=False, as_user=True)
     t2.start_service("pipewire.service", logger, block=False, as_user=True)
     t2.start_service("wireplumber.service", logger, block=False, as_user=True)
-    t2.start_service("systemd-networkd", logger, block=True, as_user=False)
+    t2.start_service("NetworkManager.service", logger, block=True, as_user=False)
     t2.start_service("bluetooth.service", logger, block=True, as_user=False)
     t2.start_service("tiny-dfr.service", logger, block=False, as_user=False)
     t2.start_service("wluma.service", logger, block=False, as_user=True)
@@ -82,11 +82,12 @@ def load_sequence() -> None:
 
 def unload_sequence() -> None:
     _log("*", "Executing UNLOAD sequence...")
+    t2.stop_service("wluma.service", logger, block=False, as_user=True)
     t2.stop_service("pipewire.socket", logger, block=True, as_user=True)
     t2.stop_service("wireplumber.service", logger, block=True, as_user=True)
     t2.stop_service("pipewire.service", logger, block=True, as_user=True)
     t2.stop_service("bluetooth.service", logger, block=True, as_user=False)
-    t2.stop_service("systemd-networkd.service", logger, block=True, as_user=False)
+    t2.stop_service("NetworkManager.service", logger, block=True, as_user=False)
     t2.stop_service("tiny-dfr.service", logger, block=True, as_user=False)
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     t2.unload_module("thunderbolt", logger)
