@@ -52,8 +52,9 @@ p_list: list[str] = [
 
 def _unload() -> bool:
     try:
-        _log("+", "STAGE 1: Stopping service...")
+        _log("+", "STAGE 1: Stopping services...")
         t2.stop_service("NetworkManager.service", logger, block=True, as_user=False)
+        t2.stop_service("bluetooth.service", logger, block=True, as_user=False)
         time.sleep(3)  # Timing is varying that's the tricky part i guess.
         _log("+", "STAGE 2: Unloading drivers...")
         # Unload drivers in reverse dependency order
@@ -72,7 +73,8 @@ def _load() -> bool:
         t2.load_module("hci_bcm4377", logger, delay=3)
         t2.load_module("brcmfmac_wcc", logger, delay=3)
         time.sleep(3)  # Timing is varying that's the tricky part i guess.
-        _log("+", "STAGE 4: Starting service...")
+        _log("+", "STAGE 4: Starting services...")
+        t2.start_service("bluetooth.service", logger, block=True, as_user=False)
         t2.start_service("NetworkManager.service", logger, block=True, as_user=False)
         return True
     except Exception as err:
