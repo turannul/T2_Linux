@@ -12,6 +12,7 @@
 #  See the LICENSE file for more details.
 
 import gi
+import json
 import logging
 import os
 import re
@@ -38,82 +39,30 @@ t_lock_bat = 30
 t_screen_bat = 60
 t_sleep_bat = 120
 ac_multiplier = 2
+T_DIM_OFFSET = 15
 
-state_dir = os.path.expanduser("~/.local/state")
-power_profile_state = os.path.join(state_dir, "power_profile_state")
-kbd_brightness_state = os.path.join(state_dir, "kbd_brightness_state")
+state_file = os.path.expanduser("~/.local/state/idle-manager/state.json")
 
 
 # Globals
-version = "0.0.2"
+version = "0.0.4"
 logger = t2.setup_logging("IdleManager", level=logging.DEBUG)
 loop = GLib.MainLoop()
-event_process = None
 timeout_process = None
 on_ac = False
 audio_playing = False
 inhibited = False
-target_user = None
 
-
-def _log(char, msg) -> None:
-    t2.log_event(logger, char, msg)
-
-
-def setup_env() -> None:
-    """Sets up XDG_RUNTIME_DIR, WAYLAND_DISPLAY, and DBUS_SESSION_BUS_ADDRESS."""
-    try:
-        if all(k in os.environ for k in ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"]):
-            return
-
-        uid = 1000
-        runtime_dir = f"/run/user/{uid}"
-
-        if os.path.exists(runtime_dir):
-            if "XDG_RUNTIME_DIR" not in os.environ:
-                os.environ["XDG_RUNTIME_DIR"] = runtime_dir
-                _log("#", f"Set XDG_RUNTIME_DIR={runtime_dir}")
-
-            if "WAYLAND_DISPLAY" not in os.environ:
-                for item in os.listdir(runtime_dir):
-                    if item.startswith("wayland-") and not item.endswith(".lock"):
-                        os.environ["WAYLAND_DISPLAY"] = item
-                        _log("#", f"Set WAYLAND_DISPLAY={item}")
-                        break
-
-            if "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
-                dbus_path = f"{runtime_dir}/bus"
-                if os.path.exists(dbus_path):
-                    os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={dbus_path}"
-                    _log("#", f"Set DBUS_SESSION_BUS_ADDRESS=unix:path={dbus_path}")
-    except Exception as e:
-        logger.error(f"Failed to setup environment: {e}")
-
-
-def get_target_user() -> str | None:
-    try:
-        import pwd
-        return pwd.getpwuid(1000).pw_name
-    except Exception:
-        return None
-
-
-target_user: str | None = get_target_user()
+# Session Context
+uid, target_user = t2.get_active_user()
+user_env = t2.get_user_env(uid)
+os.environ.update(user_env)
 
 
 def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
-    if not target_user:
-        return subprocess.Popen(cmd_list)
-
-    uid = 1000
-    runtime_dir: str = f"/run/user/{uid}"
-    prefix: list[str] = ["sudo", "-u", target_user, "env", f"XDG_RUNTIME_DIR={runtime_dir}"]
-
-    if "WAYLAND_DISPLAY" in os.environ:
-        prefix.append(f"WAYLAND_DISPLAY={os.environ['WAYLAND_DISPLAY']}")
-
-    if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
-        prefix.append(f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}")
+    prefix: list[str] = ["sudo", "-u", target_user, "env"]
+    for k, v in user_env.items():
+        prefix.append(f"{k}={v}")
 
     prefix += ["systemd-run", "--user"]
     if scope:
@@ -122,51 +71,90 @@ def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
     return subprocess.Popen(prefix + cmd_list)
 
 
-# --- State ---
-def save_power_profile() -> None:
-    curr, _, _ = t2.execute_command("powerprofilesctl get")
-    if curr and curr != "power-saver":
-        os.makedirs(state_dir, exist_ok=True)
-        with open(power_profile_state, "w") as f:
-            f.write(curr)
+# --- State Management ---
+def save_state(key, val) -> None:
+    data = {}
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, "r") as f:
+                data = json.load(f)
+        except Exception:
+            pass
+
+    if key not in data:  # Don't overwrite if already saved (stay at user preferred level)
+        data[key] = val
+        os.makedirs(os.path.dirname(state_file), exist_ok=True)
+        with open(state_file, "w") as f:
+            json.dump(data, f)
 
 
-def restore_power_profile() -> None:
-    profile = "balanced"
-    if os.path.exists(power_profile_state):
-        with open(power_profile_state, "r") as f:
-            profile = f.read().strip() or "balanced"
-    t2.execute_command(f"qs -c noctalia-shell ipc call powerProfile set {profile}")
+def get_state(key) -> str | None:
+    if not os.path.exists(state_file):
+        return None
+    try:
+        with open(state_file, "r") as f:
+            data = json.load(f)
+            return data.get(key)
+    except Exception:
+        return None
 
 
-def save_bkb() -> None:
-    curr, _, _ = t2.execute_command("bkb -s")
-    if curr and curr != "0":
-        os.makedirs(state_dir, exist_ok=True)
-        with open(kbd_brightness_state, "w") as f:
-            f.write(curr)
-
-
-def restore_bkb() -> None:
-    if os.path.exists(kbd_brightness_state):
-        with open(kbd_brightness_state, "r") as f:
-            val: str = f.read().strip()
-            if val:
-                t2.execute_command(f"bkb {val}")
+def clear_states() -> None:
+    if os.path.exists(state_file):
+        try:
+            os.remove(state_file)
+        except Exception:
+            pass
 
 
 def enter_idle() -> None:
-    _log("+", "Entering idle mode...")
-    save_power_profile()
-    save_bkb()
-    t2.execute_command("qs -c noctalia-shell ipc call powerProfile set power-saver")
-    t2.execute_command("bkb 0")
+    t2.log_event(logger, "+", "Entering idle mode (Power-save)...")
+
+    # Save and set Power Profile
+    curr_pp, _, _ = t2.execute_command("powerprofilesctl get")
+    if curr_pp and curr_pp != "power-saver":
+        save_state("power_profile", curr_pp)
+        t2.execute_command("qs -c noctalia-shell ipc call powerProfile set power-saver")
+
+    # Save and set Keyboard Brightness
+    curr_bkb, _, _ = t2.execute_command("bkb -s")
+    if curr_bkb and curr_bkb != "0":
+        save_state("kbd_brightness", curr_bkb)
+        t2.execute_command("bkb 0")
+
+    # Dim screen if not already dimmed/off
+    dim_screen()
 
 
 def exit_idle() -> None:
-    _log("+", "Exiting idle mode...")
-    restore_power_profile()
-    restore_bkb()
+    t2.log_event(logger, "+", "Restoring from idle/dim mode...")
+
+    # Restore Power Profile
+    pp = get_state("power_profile")
+    if pp:
+        t2.execute_command(f"qs -c noctalia-shell ipc call powerProfile set {pp}")
+
+    # Restore Keyboard
+    kb = get_state("kbd_brightness")
+    if kb:
+        t2.execute_command(f"bkb {kb}")
+
+    # Restore Screen Brightness
+    sc = get_state("screen_brightness")
+    if sc:
+        t2.execute_command(f"bdp {sc}")
+
+    clear_states()
+
+
+def dim_screen() -> None:
+    curr_bdp, _, _ = t2.execute_command("bdp -s")
+    if curr_bdp:
+        curr_bdp = curr_bdp.strip('%')
+        if curr_bdp and curr_bdp != "10":
+            save_state("screen_brightness", curr_bdp)
+            t2.log_event(logger, "+", f"Dimming screen (from {curr_bdp}% to 10%)")
+            t2.execute_command("bdp 10")
 
 
 def get_self_cmd(action) -> str:
@@ -176,16 +164,13 @@ def get_self_cmd(action) -> str:
 # --- Checks ---
 def check_ac() -> bool:
     global on_ac
-    is_ac: bool = False
-    ac_path = "/sys/class/power_supply/ADP1/online"
-    if os.path.exists(ac_path):
-        with open(ac_path, "r") as f:
-            is_ac = (f.read().strip() == "1")
-            if is_ac != on_ac:
-                on_ac = is_ac
-                _log("+", f"Power Source: {'AC' if is_ac else 'Battery'}")
-                update_timeouts()
-    return True if is_ac else False
+    stdout, _, _ = t2.execute_command("upower -i /org/freedesktop/UPower/devices/DisplayDevice")
+    is_ac = "power supply:         yes" in stdout or "state:               charging" in stdout or "state:               fully-charged" in stdout
+    if is_ac != on_ac:
+        on_ac = is_ac
+        t2.log_event(logger, "+", f"Power Source: {'AC' if is_ac else 'Battery'}")
+        update_timeouts()
+    return True
 
 
 def check_audio() -> bool:
@@ -197,15 +182,15 @@ def check_audio() -> bool:
         ignored = False
         for line in streams:
             if line and not line.startswith(" "):
-                ignored: bool = "cava" in line.lower()
+                ignored = "cava" in line.lower()
             elif "[active]" in line and not ignored and "monitor" not in line.lower():
                 is_playing = True
                 break
     if is_playing != audio_playing:
         audio_playing = is_playing
-        _log("+", f"Audio: {'Playing' if is_playing else 'Not Playing'}")
+        t2.log_event(logger, "+", f"Audio: {'Playing' if is_playing else 'Not Playing'}")
         update_timeouts()
-    return True if is_playing else False
+    return True
 
 
 def check_inhibitor() -> bool:
@@ -216,9 +201,9 @@ def check_inhibitor() -> bool:
     is_inhibited = bool(re.search(pattern, stdout))
     if is_inhibited != inhibited:
         inhibited = is_inhibited
-        _log("+", f"Inhibitor: {'Detected' if inhibited else 'Not Detected'}")
+        t2.log_event(logger, "+", f"Inhibitor: {'Detected' if inhibited else 'Not Detected'}")
         update_timeouts()
-    return True if is_inhibited else False
+    return True
 
 
 def update_timeouts() -> None:
@@ -228,71 +213,89 @@ def update_timeouts() -> None:
         timeout_process.wait()
 
     mult = ac_multiplier if on_ac else 1
-    t = {"lock": t_lock_bat * mult, "screen": t_screen_bat * mult, "sleep": t_sleep_bat * mult}
+    t = {
+        "lock": t_lock_bat * mult,
+        "dim": (t_screen_bat - T_DIM_OFFSET) * mult,
+        "screen": t_screen_bat * mult,
+        "sleep": t_sleep_bat * mult
+    }
 
     cmd_lock = "qs -c noctalia-shell ipc call lockScreen lock"
     cmd_idle = get_self_cmd("idle")
     cmd_active = get_self_cmd("active")
+    cmd_dim = get_self_cmd("dim")
     mon_off = "niri msg action power-off-monitors"
     mon_on = "niri msg action power-on-monitors"
 
-    base = ["swayidle", "-w", "timeout", str(t['lock']), cmd_lock,
-            "timeout", str(t['screen']), f"{cmd_idle}; {mon_off}",
-            "resume", f"{mon_on}; {cmd_active}"]
+    # Base swayidle command (merged static events)
+    base = ["swayidle", "-w",
+            "lock", cmd_lock,
+            "before-sleep", f"{cmd_lock}; {cmd_idle}; {mon_off}"]
 
-    if not audio_playing:
-        base += ["timeout", str(t['sleep']), "systemctl sleep"]  # systemctl sleep i think better than suspend.
+    if not inhibited:
+        # Dimming
+        if t['dim'] > 0:
+            base += ["timeout", str(t['dim']), cmd_dim,
+                     "resume", cmd_active]
 
-    _log("+", "Swayidle configured with:")
-    _log("+", f"- Lock after: {t['lock']}s")
-    _log("+", f"- Screen off after: {t['screen']}s")
-    _log("+", f"- Suspend after: {'OFF' if audio_playing else f'{t['sleep']}s'}")
+        # Screen off + Idle states
+        base += ["timeout", str(t['screen']), f"{cmd_idle}; {mon_off}",
+                 "resume", f"{mon_on}; {cmd_active}"]
 
+        # Suspend (if no audio)
+        if not audio_playing:
+            base += ["timeout", str(t['sleep']), "systemctl sleep"]
+
+    t2.log_event(logger, "#", f"Updating swayidle (AC={on_ac}, Inhibited={inhibited}, Audio={audio_playing})")
     timeout_process = run_as_user(base)
 
 
 def on_sleep(con, sender, path, iface, sig, p, d) -> bool:
-    _, _, _, _, _, _ = con, sender, path, iface, sig, d  # Discard useless info, meantime make pyright happy.
     going_sleep = bool(p.unpack()[0])
-    # Current issue where going_sleep signals correct | but screen do light up. a few times?
     if going_sleep:
-        _log("!", "Suspending...")
+        t2.log_event(logger, "!", "System going to sleep...")
         enter_idle()
-        t2.execute_command("qs -c noctalia-shell ipc call lockScreen lock")  # Lock the screen before-sleep
-        t2.execute_command("niri msg action power-off-monitors")  # Explicitly turn off?
-        return True
-    return True  # Can add else: to revert power-off-monitors action if required
-    #  TODO: No multi-monitor supported yet?
+        t2.execute_command("qs -c noctalia-shell ipc call lockScreen lock")
+        t2.execute_command("niri msg action power-off-monitors")
+    else:
+        t2.log_event(logger, "!", "System waking up...")
+        exit_idle()
+        t2.execute_command("niri msg action power-on-monitors")
+    return True
 
 
 def start_daemon() -> None:
     t2.check_root()
+    clear_states()  # Start fresh
+
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
         bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep", "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, on_sleep, None)
     except Exception as e:
-        _log("-", f"DBus Error: {e}")
+        t2.log_event(logger, "-", f"DBus Error: {e}")
 
-    run_as_user(["swayidle", "-w", "lock", "qs -c noctalia-shell ipc call lockScreen lock", "before-sleep", f"qs -c noctalia-shell ipc call lockScreen lock; {get_self_cmd('idle')}"])
-
+    # Initial state check
     check_ac()
     check_audio()
     check_inhibitor()
-    GLib.timeout_add_seconds(2, check_ac)
-    GLib.timeout_add_seconds(2, check_audio)
-    GLib.timeout_add_seconds(2, check_inhibitor)
 
-    _log("+", "Idle Manager Started")
+    # Periodic checks
+    GLib.timeout_add_seconds(5, check_ac)
+    GLib.timeout_add_seconds(2, check_audio)
+    GLib.timeout_add_seconds(3, check_inhibitor)
+
+    t2.log_event(logger, "+", "Idle Manager Started")
     loop.run()
-    _log("+", "Idle Manager Stopped")
 
 
 if __name__ == "__main__":
-    setup_env()
     if len(sys.argv) > 1:
-        if sys.argv[1] == "idle":
+        action = sys.argv[1]
+        if action == "idle":
             enter_idle()
-        elif sys.argv[1] == "active":
+        elif action == "active":
             exit_idle()
+        elif action == "dim":
+            dim_screen()
     else:
         start_daemon()
