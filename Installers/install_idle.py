@@ -1,1 +1,0 @@
-../src/idle/install_idle.py

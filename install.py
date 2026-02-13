@@ -36,7 +36,6 @@ def install_common() -> None:
 def run_installers(action) -> None:
     installers: list[str] = [
         "src/brightness/install_brightness.py",
-        "src/idle/install_idle.py",
         "src/suspend/install_suspend.py",
         "src/wifi/install_wifi.py"
     ]
