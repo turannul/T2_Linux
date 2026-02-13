@@ -45,21 +45,21 @@ state_file = os.path.expanduser("~/.local/state/idle-manager/state.json")
 
 
 # Globals
-version = "0.0.4"
+version = "0.0.5"
 logger = t2.setup_logging("IdleManager", level=logging.DEBUG)
 loop = GLib.MainLoop()
 timeout_process = None
 on_ac = False
 audio_playing = False
 inhibited = False
-
-# Session Context
-uid, target_user = t2.get_active_user()
-user_env = t2.get_user_env(uid)
-os.environ.update(user_env)
+target_user = None
+user_env = {}
 
 
 def run_as_user(cmd_list, scope=True) -> subprocess.Popen[bytes]:
+    if not target_user:
+        return subprocess.Popen(cmd_list)
+
     prefix: list[str] = ["sudo", "-u", target_user, "env"]
     for k, v in user_env.items():
         prefix.append(f"{k}={v}")
@@ -178,14 +178,19 @@ def check_audio() -> bool:
     stdout, _, _ = t2.execute_command("wpctl status")
     is_playing = False
     if "Streams:" in stdout:
-        streams: list[str] = stdout.split("Streams:")[1].splitlines()
-        ignored = False
-        for line in streams:
-            if line and not line.startswith(" "):
-                ignored = "cava" in line.lower()
-            elif "[active]" in line and not ignored and "monitor" not in line.lower():
-                is_playing = True
-                break
+        try:
+            streams_section = stdout.split("Streams:")[1]
+            for line in streams_section.splitlines():
+                if "[active]" in line:
+                    low = line.lower()
+                    # Ignore cava and monitor streams explicitly
+                    if "cava" in low or "monitor" in low:
+                        continue
+                    is_playing = True
+                    break
+        except IndexError:
+            pass
+
     if is_playing != audio_playing:
         audio_playing = is_playing
         t2.log_event(logger, "+", f"Audio: {'Playing' if is_playing else 'Not Playing'}")
@@ -267,6 +272,16 @@ def on_sleep(con, sender, path, iface, sig, p, d) -> bool:
 def start_daemon() -> None:
     t2.check_root()
     clear_states()  # Start fresh
+
+    # Initialize Session
+    global target_user, user_env
+    try:
+        uid, target_user = t2.get_active_user()
+        user_env = t2.get_user_env(uid)
+        os.environ.update(user_env)
+    except Exception as e:
+        t2.log_event(logger, "-", f"Critical: Failed to identify active user session: {e}")
+        sys.exit(1)
 
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
