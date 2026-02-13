@@ -97,11 +97,30 @@ def get_active_user() -> Tuple[str, str]:
     """
     output: str = subprocess.check_output(["loginctl", "list-users", "--no-legend"], text=True).strip()
     parts = output.splitlines()[0].split()
-    uid: str = parts[0]
-    user: str = parts[1]
-    _: str = parts[2]  # linger
-    _: str = parts[3]  # state, This could be useful later.
-    return uid, user
+    return parts[0], parts[1]
+
+
+def get_user_env(uid: str) -> Dict[str, str]:
+    """
+    Returns a dictionary of environment variables for the specified user UID.
+    Includes XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS, and WAYLAND_DISPLAY.
+    """
+    env = os.environ.copy()
+    runtime_dir = f"/run/user/{uid}"
+
+    if os.path.exists(runtime_dir):
+        env["XDG_RUNTIME_DIR"] = runtime_dir
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            dbus_path = f"{runtime_dir}/bus"
+            if os.path.exists(dbus_path):
+                env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={dbus_path}"
+
+        if "WAYLAND_DISPLAY" not in env:
+            for item in os.listdir(runtime_dir):
+                if item.startswith("wayland-") and not item.endswith(".lock"):
+                    env["WAYLAND_DISPLAY"] = item
+                    break
+    return env
 
 
 def execute_command_as_user(cmd: str, user: str, uid: str, env: Optional[Dict[str, str]] = None) -> Tuple[str, str, int]:
@@ -109,10 +128,7 @@ def execute_command_as_user(cmd: str, user: str, uid: str, env: Optional[Dict[st
     Execute a command as a specific user with their DBus/XDG environment.
     """
     if env is None:
-        env = os.environ.copy()
-
-    env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
-    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+        env = get_user_env(uid)
 
     full_cmd = f"sudo -E -u {user} {cmd}"
     return execute_command(full_cmd, env=env)
