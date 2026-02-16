@@ -50,36 +50,80 @@ p_list: list[str] = [
 ]
 
 
-def _unload() -> bool:
+def _unload_wifi() -> None:
+    t2.unload_module("brcmfmac_wcc", logger, delay=3)
+
+
+def _load_wifi() -> None:
+    t2.load_module("brcmfmac_wcc", logger, delay=3)
+
+
+def _unload_bt() -> None:
+    t2.unload_module("hci_bcm4377", logger, delay=3)
+
+
+def _load_bt() -> None:
+    t2.load_module("hci_bcm4377", logger, delay=3)
+
+
+def _unload_all() -> bool:
     try:
-        _log("+", "STAGE 1: Stopping services...")
-        t2.stop_service("NetworkManager.service", logger, block=True, as_user=False)
-        t2.stop_service("bluetooth.service", logger, block=True, as_user=False)
-        time.sleep(3)  # Timing is varying that's the tricky part i guess.
-        _log("+", "STAGE 2: Unloading drivers...")
+        _log("+", "STAGE 1: Unloading drivers...")
         # Unload drivers in reverse dependency order
-        t2.unload_module("brcmfmac_wcc", logger, delay=3)
-        t2.unload_module("hci_bcm4377", logger, delay=3)
+        _unload_wifi()
+        _unload_bt()
         return True
     except Exception as err:
         _log("-", f"Unable to unload due: {err}")
         return False
 
 
-def _load() -> bool:
+def _load_all() -> bool:
     try:
-        _log("+", "STAGE 3: Loading drivers...")
+        _log("+", "STAGE 2: Loading drivers...")
         # Load driver then, start service
-        t2.load_module("hci_bcm4377", logger, delay=3)
-        t2.load_module("brcmfmac_wcc", logger, delay=3)
-        time.sleep(3)  # Timing is varying that's the tricky part i guess.
-        _log("+", "STAGE 4: Starting services...")
-        t2.start_service("bluetooth.service", logger, block=True, as_user=False)
-        t2.start_service("NetworkManager.service", logger, block=True, as_user=False)
+        _load_bt()
+        _load_wifi()
         return True
     except Exception as err:
         _log("-", f"Unable to load due: {err}")
         return False
+
+
+def _verify_connectivity(retries: int = 3) -> bool:
+    """Verifies that both Wi-Fi and Bluetooth are functional via sysfs with retries."""
+    _log("*", f"Verifying hardware recovery (Attempt {4 - retries}/4)...")
+
+    # Wi-Fi check: look for any wireless interface
+    wifi_ok = any(os.path.exists(f"/sys/class/net/{iface}/wireless") for iface in os.listdir("/sys/class/net"))
+
+    # Bluetooth check: ensure hci0 exists in sysfs
+    bt_ok = os.path.exists("/sys/class/bluetooth/hci0")
+
+    if wifi_ok and bt_ok:
+        t2.execute_command("notify-send 'Wi-Fi Monitor' 'Connectivity restored' --urgency=low --icon=network-wireless", as_user=True)
+        _log("+", "Connectivity verified: Wi-Fi and Bluetooth are active.")
+        return True
+
+    if retries > 0:
+        if not wifi_ok:
+            _log("!", "Wi-Fi missing. Retrying Wi-Fi reload...")
+            _unload_wifi()
+            _load_wifi()
+        if not bt_ok:
+            _log("!", "Bluetooth missing. Retrying BT reload...")
+            _unload_bt()
+            _load_bt()
+
+        time.sleep(2)
+        return _verify_connectivity(retries - 1)
+
+    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed after multiple attempts' --urgency=critical --icon=dialog-error", as_user=True)
+    if not wifi_ok:
+        _log("-", "Verification failed: No Wi-Fi interface found in sysfs.")
+    if not bt_ok:
+        _log("-", "Verification failed: Bluetooth controller hci0 missing in sysfs.")
+    return False
 
 
 def _reset_sequence() -> bool:
@@ -90,12 +134,18 @@ def _reset_sequence() -> bool:
         _log("#", f"Cooldown active ({int(cd_sec - (n - lrt))}s remaining), skipping reset.")
         return False
 
-    if _unload():
+    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Reset sequence started' --urgency=normal --icon=view-refresh", as_user=True)
+    if _unload_all():
         _log("*", "Hardware settling (5s)...")
         time.sleep(5)
-        if _load():
-            lrt = time.time()
-            return True
+        if _load_all():
+            _log("*", "Waiting for hardware initialization (5s)...")
+            time.sleep(5)
+            if _verify_connectivity(retries=3):
+                lrt = time.time()
+                return True
+            else:
+                _log("!", "Post-reset verification failed after retries. Recovery may be incomplete.")
 
     return False
 
@@ -119,6 +169,7 @@ def al_is_watching() -> None:
             for pattern in compiled_p_list:
                 if pattern.search(line):
                     _log("-", f"Reset trigger: {line.strip()} (Pattern: {pattern.pattern})")
+                    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Hardware hang detected' --urgency=critical --icon=dialog-error", as_user=True)
                     _reset_sequence()
                     _log("+", "Reset sequence completed, monitoring for stability...")
                     break
@@ -137,6 +188,7 @@ def main() -> None:
     if args.action in ["version", "v"]:
         print(version)
     if args.action == "exec":
+        t2.execute_command("notify-send 'Wi-Fi Monitor' 'Manual reset triggered' --urgency=normal --icon=view-refresh", as_user=True)
         _reset_sequence()
     if args.action == "daemon":
         al_is_watching()

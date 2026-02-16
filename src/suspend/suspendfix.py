@@ -38,29 +38,21 @@ def _log(char, msg) -> None:
 
 def rescan_pci() -> bool:
     _log("*", "Rescanning PCI bus...")
-    try:
-        with open("/sys/bus/pci/rescan", "w") as f:
-            f.write("1")
-            return True
-    except Exception as e:
-        _log("-", f"Failed to rescan PCI: {e}")
-        return False
+    _, _, code = t2.execute_command("echo 1 > /sys/bus/pci/rescan")
+    return code == 0
 
 
 def remove_device(device_id: str, name: Optional[str] = None) -> bool:
     path = f"/sys/bus/pci/devices/{device_id}/remove"
     if os.path.exists(path):
         _log("*", f"Removing {name or device_id}...")
-        try:
-            with open(path, "w") as f:
-                f.write("1")
-            return True
-        except Exception as e:
-            _log("-", f"Failed to remove {name or device_id}: {e}")
+        _, _, code = t2.execute_command(f"echo 1 > {path}")
+        return code == 0
     return False
 
 
 def load_sequence() -> None:
+    t2.execute_command("notify-send 'Suspend Fix' 'Executing LOAD sequence' --urgency=normal --icon=view-refresh", as_user=True)
     _log("*", "Executing LOAD sequence...")
     t2.load_module("apple-bce", logger, delay=4)
     t2.load_module("hid_appletb_bl", logger)
@@ -71,23 +63,17 @@ def load_sequence() -> None:
     rescan_pci()
     t2.load_module("thunderbolt", logger)
     t2.start_service("pipewire.socket", logger, block=False, as_user=True)
-    t2.start_service("pipewire.service", logger, block=False, as_user=True)
-    t2.start_service("wireplumber.service", logger, block=False, as_user=True)
-    t2.start_service("NetworkManager.service", logger, block=True, as_user=False)
-    t2.start_service("bluetooth.service", logger, block=True, as_user=False)
     t2.start_service("tiny-dfr.service", logger, block=False, as_user=False)
     t2.start_service("wluma.service", logger, block=False, as_user=True)
     _log("*", "LOAD sequence complete.")
+    t2.execute_command("notify-send 'Suspend Fix' 'LOAD sequence complete' --urgency=low --icon=dialog-info", as_user=True)
 
 
 def unload_sequence() -> None:
+    t2.execute_command("notify-send 'Suspend Fix' 'Executing UNLOAD sequence' --urgency=normal --icon=view-refresh", as_user=True)
     _log("*", "Executing UNLOAD sequence...")
     t2.stop_service("wluma.service", logger, block=False, as_user=True)
     t2.stop_service("pipewire.socket", logger, block=True, as_user=True)
-    t2.stop_service("wireplumber.service", logger, block=True, as_user=True)
-    t2.stop_service("pipewire.service", logger, block=True, as_user=True)
-    t2.stop_service("bluetooth.service", logger, block=True, as_user=False)
-    t2.stop_service("NetworkManager.service", logger, block=True, as_user=False)
     t2.stop_service("tiny-dfr.service", logger, block=True, as_user=False)
     remove_device("0000:06:00.0", "Thunderbolt Controller")
     t2.unload_module("thunderbolt", logger)
@@ -98,6 +84,7 @@ def unload_sequence() -> None:
     t2.unload_module("brcmfmac_wcc", logger, delay=2)
     t2.unload_module("apple-bce", logger, delay=4)
     _log("*", "UNLOAD sequence complete.")
+    t2.execute_command("notify-send 'Suspend Fix' 'UNLOAD sequence complete' --urgency=low --icon=dialog-info", as_user=True)
 
 
 def main() -> None:
