@@ -1,0 +1,4 @@
+{
+    "include": ["."],
+    "extraPaths": ["./Installers", "./src/brightness", "./src/suspend", "./src/wifi", "./src/common"]
+}

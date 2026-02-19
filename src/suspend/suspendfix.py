@@ -20,29 +20,27 @@ import time
 from typing import Optional
 
 sys.dont_write_bytecode = True
+sys.path.append("/usr/local/sbin/common")
 
-
-try:
-    import t2  # type: ignore
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    import t2  # type: ignore
-
+import t2
 version = "0.6.0"
 logger = t2.setup_logging("SuspendFix", level=logging.DEBUG)
 
 
-def _log(char, msg) -> None:
+def _log(char: str, msg: str) -> None:
+    """Logs an event using the shared logger."""
     t2.log_event(logger, char, msg)
 
 
 def rescan_pci() -> bool:
+    """Triggers a PCI bus rescan."""
     _log("*", "Rescanning PCI bus...")
     _, _, code = t2.execute_command("echo 1 > /sys/bus/pci/rescan")
     return code == 0
 
 
 def remove_device(device_id: str, name: Optional[str] = None) -> bool:
+    """Removes a PCI device from the system."""
     path = f"/sys/bus/pci/devices/{device_id}/remove"
     if os.path.exists(path):
         _log("*", f"Removing {name or device_id}...")
@@ -52,24 +50,24 @@ def remove_device(device_id: str, name: Optional[str] = None) -> bool:
 
 
 def load_sequence() -> None:
+    """ Executes the driver load sequence after resume. """
     t2.execute_command("notify-send 'Suspend Fix' 'Executing LOAD sequence' --urgency=normal --icon=view-refresh", as_user=True)
     _log("*", "Executing LOAD sequence...")
     t2.load_module("apple-bce", logger, delay=4)
     t2.load_module("hid_appletb_bl", logger)
     t2.load_module("hid_appletb_kbd", logger)
     t2.load_module("appletbdrm", logger)
-    t2.load_module("brcmfmac_wcc", logger, delay=1)
-    t2.load_module("hci_bcm4377", logger, delay=3)
+    t2.execute_command("WiFi-Monitor exec")
     rescan_pci()
     t2.load_module("thunderbolt", logger)
     t2.start_service("pipewire.socket", logger, block=False, as_user=True)
     t2.start_service("tiny-dfr.service", logger, block=False, as_user=False)
     t2.start_service("wluma.service", logger, block=False, as_user=True)
     _log("*", "LOAD sequence complete.")
-    t2.execute_command("notify-send 'Suspend Fix' 'LOAD sequence complete' --urgency=low --icon=dialog-info", as_user=True)
 
 
 def unload_sequence() -> None:
+    """ Executes the driver unload sequence before suspend. """
     t2.execute_command("notify-send 'Suspend Fix' 'Executing UNLOAD sequence' --urgency=normal --icon=view-refresh", as_user=True)
     _log("*", "Executing UNLOAD sequence...")
     t2.stop_service("wluma.service", logger, block=False, as_user=True)
@@ -84,10 +82,10 @@ def unload_sequence() -> None:
     t2.unload_module("brcmfmac_wcc", logger, delay=2)
     t2.unload_module("apple-bce", logger, delay=4)
     _log("*", "UNLOAD sequence complete.")
-    t2.execute_command("notify-send 'Suspend Fix' 'UNLOAD sequence complete' --urgency=low --icon=dialog-info", as_user=True)
 
 
 def main() -> None:
+    """Main entry point for suspend management."""
     t2.check_root()
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["load", "unload", "reload", "version", "v"])

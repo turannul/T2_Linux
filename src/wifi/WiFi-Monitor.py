@@ -18,58 +18,52 @@ import re
 import subprocess
 import sys
 import time
-from typing import Pattern
+from typing import List, Pattern
 
 sys.dont_write_bytecode = True
 
 cd_sec: int = 20
 lrt: float = 0.0
 
-try:
-    import t2  # type: ignore
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    import t2  # type: ignore
+sys.path.append("/usr/local/sbin/common")
+import t2
 
 version = "0.2.5"
 logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
 
 def _log(log_level: str, event_msg: str) -> None:
-    """Log a message with a specific log level format using shared logger."""
+    """Logs an event using the shared logger."""
     t2.log_event(logger, log_level, event_msg)
 
 
-# regex pattern to match fatal errors (from my own experience):
-p_list: list[str] = [
-    r"CMD_TRIGGER_SCAN.*error.*\(5\)",  # - CMD_TRIGGER_SCAN error (5): I/O Error during scan start
-    r"brcmf_msgbuf_query_dcmd",  # - query_dcmd: Firmware timeout (Hang)
-    r"set wpa_auth failed",  # - set wpa_auth failed: Crypto offload failure
-    r"error \(-12\)",  # - error (-12): ENOMEM (Memory allocation failure)
-    r"failed with error -110"  # - error (-110): ETIMEDOUT (Firmware/Probe timeout) | Mostly from hci_bcm4377...
-]
+p_list: list[str] = [r"CMD_TRIGGER_SCAN.*error.*\(5\)", r"brcmf_msgbuf_query_dcmd", r"set wpa_auth failed", r"error \(-12\)", r"failed with error -110"]
 
 
 def _unload_wifi() -> None:
+    """Unloads the Wi-Fi driver."""
     t2.unload_module("brcmfmac_wcc", logger, delay=3)
 
 
 def _load_wifi() -> None:
+    """Loads the Wi-Fi driver."""
     t2.load_module("brcmfmac_wcc", logger, delay=3)
 
 
 def _unload_bt() -> None:
+    """Unloads the Bluetooth driver."""
     t2.unload_module("hci_bcm4377", logger, delay=3)
 
 
 def _load_bt() -> None:
+    """Loads the Bluetooth driver."""
     t2.load_module("hci_bcm4377", logger, delay=3)
 
 
 def _unload_all() -> bool:
+    """Unloads both Wi-Fi and Bluetooth drivers."""
     try:
         _log("+", "STAGE 1: Unloading drivers...")
-        # Unload drivers in reverse dependency order
         _unload_wifi()
         _unload_bt()
         return True
@@ -79,9 +73,9 @@ def _unload_all() -> bool:
 
 
 def _load_all() -> bool:
+    """Loads both Bluetooth and Wi-Fi drivers."""
     try:
         _log("+", "STAGE 2: Loading drivers...")
-        # Load driver then, start service
         _load_bt()
         _load_wifi()
         return True
@@ -91,20 +85,14 @@ def _load_all() -> bool:
 
 
 def _verify_connectivity(retries: int = 3) -> bool:
-    """Verifies that both Wi-Fi and Bluetooth are functional via sysfs with retries."""
+    """Verifies hardware recovery via sysfs with retries."""
     _log("*", f"Verifying hardware recovery (Attempt {4 - retries}/4)...")
-
-    # Wi-Fi check: look for any wireless interface
     wifi_ok = any(os.path.exists(f"/sys/class/net/{iface}/wireless") for iface in os.listdir("/sys/class/net"))
-
-    # Bluetooth check: ensure hci0 exists in sysfs
     bt_ok = os.path.exists("/sys/class/bluetooth/hci0")
-
     if wifi_ok and bt_ok:
         t2.execute_command("notify-send 'Wi-Fi Monitor' 'Connectivity restored' --urgency=low --icon=network-wireless", as_user=True)
         _log("+", "Connectivity verified: Wi-Fi and Bluetooth are active.")
         return True
-
     if retries > 0:
         if not wifi_ok:
             _log("!", "Wi-Fi missing. Retrying Wi-Fi reload...")
@@ -114,10 +102,8 @@ def _verify_connectivity(retries: int = 3) -> bool:
             _log("!", "Bluetooth missing. Retrying BT reload...")
             _unload_bt()
             _load_bt()
-
         time.sleep(2)
         return _verify_connectivity(retries - 1)
-
     t2.execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed after multiple attempts' --urgency=critical --icon=dialog-error", as_user=True)
     if not wifi_ok:
         _log("-", "Verification failed: No Wi-Fi interface found in sysfs.")
@@ -127,13 +113,12 @@ def _verify_connectivity(retries: int = 3) -> bool:
 
 
 def _reset_sequence() -> bool:
+    """Executes the full hardware reset sequence."""
     global lrt
     n = time.time()
-
     if n - lrt < cd_sec:
         _log("#", f"Cooldown active ({int(cd_sec - (n - lrt))}s remaining), skipping reset.")
         return False
-
     t2.execute_command("notify-send 'Wi-Fi Monitor' 'Reset sequence started' --urgency=normal --icon=view-refresh", as_user=True)
     if _unload_all():
         _log("*", "Hardware settling (5s)...")
@@ -146,26 +131,21 @@ def _reset_sequence() -> bool:
                 return True
             else:
                 _log("!", "Post-reset verification failed after retries. Recovery may be incomplete.")
-
     return False
 
 
 def al_is_watching() -> None:
-    """Monitors journalctl for hardware hang signatures and triggers reset."""
+    """ Monitors journalctl for hardware hang signatures. """
     _log("+", "Starting WiFi Guardian Monitor...")
     compiled_p_list: list[Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in p_list]
-
     try:
-        p = subprocess.Popen(['journalctl', '-k', '-f', '-n', '0', '--no-pager'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-
+        p = subprocess.Popen(["journalctl", "-k", "-f", "-n", "0", "--no-pager"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         if p.stdout is None:
             _log("-", f"Failed to open journalctl stdout. Error: {p.stderr}")
             return
-
         for line in p.stdout:
             if not line:
                 continue
-
             for pattern in compiled_p_list:
                 if pattern.search(line):
                     _log("-", f"Reset trigger: {line.strip()} (Pattern: {pattern.pattern})")
@@ -173,7 +153,6 @@ def al_is_watching() -> None:
                     _reset_sequence()
                     _log("+", "Reset sequence completed, monitoring for stability...")
                     break
-
     except PermissionError:
         _log("-", "Error: Permission denied. Run as root?")
     except Exception as err:
@@ -181,6 +160,7 @@ def al_is_watching() -> None:
 
 
 def main() -> None:
+    """ Main entry point for the WiFi monitor. """
     t2.check_root()
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["exec", "daemon", "version", "v"])
