@@ -11,16 +11,9 @@
 #
 #  See the LICENSE file for more details.
 
+import argparse
 import os
-import sys
-
-sys.dont_write_bytecode = True
-
-try:
-    import base_installer as base
-except ImportError:
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    import base_installer as base
+from common.core import _check_sudo, _get_actual_user, _get_repo_root, _install_common, _install_file, _install_service, _install_sudo_exception, _uninstall_service, install_bin
 
 script_src = "WiFi-Monitor.py"
 script_dst = "WiFi-Monitor"
@@ -43,43 +36,62 @@ StandardError=journal
 WantedBy=multi-user.target
 """
 
+exception_file = "/etc/sudoers.d/2-wifi-monitor"
+exception_content = "{user} ALL=NOPASSWD: /usr/local/sbin/WiFi-Monitor"
+
 
 def install() -> None:
     """Installs WiFi-Monitor and corresponding systemd service."""
-    repo_root = base.get_repo_root()
+    repo_root = _get_repo_root()
     script_dir = os.path.join(repo_root, "src", "wifi")
-    base.install_common()
+    changed = _install_common()
     src: str = os.path.join(script_dir, script_src)
-    dst: str = os.path.join(base.INSTALL_BIN, script_dst)
-    if not base.install_file(src, dst):
-        return
-    base.install_service(service_name, service_content, enable_now=True)
-    print("Installation complete.")
+    dst: str = os.path.join(install_bin, script_dst)
+    if _install_file(src, dst):
+        changed = True
+    if _install_service(service_name, service_content, enable_now=True):
+        changed = True
+    if _install_sudo_exception(exception_file, exception_content.format(user=_get_actual_user())):
+        changed = True
+
+    if changed:
+        print("Installation complete.")
+    else:
+        print("Nothing to update.")
 
 
 def uninstall() -> None:
     """Removes WiFi-Monitor and stops/disables systemd service."""
-    dst: str = os.path.join(base.INSTALL_BIN, script_dst)
-    base.uninstall_service(service_name)
+    dst: str = os.path.join(install_bin, script_dst)
+    changed = _uninstall_service(service_name)
     if os.path.exists(dst):
         print(f"Removing {dst}...")
         os.remove(dst)
-    print("Uninstallation complete.")
+        changed = True
+    if os.path.exists(exception_file):
+        print(f"Removing exception file: {exception_file}")
+        os.remove(exception_file)
+        changed = True
+
+    if changed:
+        print("Uninstallation complete.")
+    else:
+        print("Nothing to uninstall.")
 
 
 def main() -> None:
     """Main entry for wifi installer."""
-    base.check_sudo()
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} {{install|uninstall}}")
-        sys.exit(1)
-    action = sys.argv[1]
+    _check_sudo()
+
+    parser = argparse.ArgumentParser(description="Installer for WiFi Guardian utility.")
+    parser.add_argument("action", choices=["install", "uninstall"], help="Action to perform")
+    args = parser.parse_args()
+
+    action = args.action
     if action == "install":
         install()
     elif action == "uninstall":
         uninstall()
-    else:
-        print(f"Usage: {sys.argv[0]} {{install|uninstall}}")
 
 
 if __name__ == "__main__":

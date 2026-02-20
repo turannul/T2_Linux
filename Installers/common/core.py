@@ -15,29 +15,35 @@ import filecmp
 import os
 import shutil
 import subprocess
-import sys
 
-sys.dont_write_bytecode = True
+__all__: list[str] = ["_check_sudo", "_get_repo_root", "_install_common", "_install_file", "_install_service", "_install_sudo_exception", "_uninstall_service", "install_bin", "install_cmmn", "install_svc", "_get_actual_user"]
 
-INSTALL_BIN = "/usr/local/sbin"
-INSTALL_SVC = "/etc/systemd/system"
-INSTALL_COMMON = "/usr/local/sbin/common"
+install_bin = "/usr/local/sbin"
+install_svc = "/etc/systemd/system"
+install_cmmn = "/usr/local/sbin/common"
 
 
-def check_sudo() -> None:
-    """ Re-executes the script with sudo if not already running as root. """
+def _get_args() -> list[str]:
+    """Retrieves command line arguments manually."""
+    with open("/proc/self/cmdline", "r") as f:
+        cmdline = f.read()
+    return [arg for arg in cmdline.split('\0') if arg]
+
+
+def _check_sudo() -> None:
+    """Re-executes the script with sudo if not already running as root."""
     if os.geteuid() != 0:
-        args: list[str] = ["sudo", sys.executable] + sys.argv
+        args: list[str] = ["sudo", "python3"] + _get_args()
         os.execvp("sudo", args)
 
 
-def get_repo_root() -> str:
-    """ Returns the absolute path to the repository root. """
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def _get_repo_root() -> str:
+    """Returns the absolute path to the repository root."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def install_file(src: str, dst: str, mode: int = 0o755, quiet: bool = False) -> bool:
-    """ Installs a file if it differs from destination or if destination is a symlink. """
+def _install_file(src: str, dst: str, mode: int = 0o755, quiet: bool = False) -> bool:
+    """Installs a file if it differs from destination or if destination is a symlink."""
     if not os.path.exists(src):
         print(f"Error: Source file {src} not found.")
         return False
@@ -50,40 +56,39 @@ def install_file(src: str, dst: str, mode: int = 0o755, quiet: bool = False) -> 
         os.chown(dst_dir, 0, 0)
 
     is_symlink = os.path.islink(dst)
-    
+
     if not is_symlink and os.path.exists(dst) and filecmp.cmp(src, dst, shallow=False):
         if not quiet:
             print(f"File {dst} is identical. Skipping update.")
+        return False
     else:
         if is_symlink:
             print(f"Replacing symlink {dst} with physical file...")
             os.remove(dst)
         else:
             print(f"Installing {src} to {dst}...")
-            
+
         try:
             shutil.copy(src, dst)
             os.chmod(dst, mode)
             os.chown(dst, 0, 0)
+            return True
         except Exception as e:
             print(f"Error installing {dst}: {e}")
             return False
-    return True
 
 
-def install_common() -> None:
-    """ Installs the common t2.py library. """
-    repo_root = get_repo_root()
+def _install_common() -> bool:
+    """Installs the common t2.py library."""
+    repo_root = _get_repo_root()
     src = os.path.join(repo_root, "src", "common", "t2.py")
-    dst = os.path.join(INSTALL_COMMON, "t2.py")
-    install_file(src, dst, mode=0o644, quiet=True)
+    dst = os.path.join(install_cmmn, "t2.py")
+    return _install_file(src, dst, mode=0o644, quiet=True)
 
 
-def install_service(
-    service_name: str, content: str, enable_now: bool = True, quiet: bool = False
-) -> bool:
+def _install_service(service_name: str, content: str, enable_now: bool = True, quiet: bool = False) -> bool:
     """Creates and manages systemd service."""
-    dst = os.path.join(INSTALL_SVC, service_name)
+    dst = os.path.join(install_svc, service_name)
     content = content.strip() + "\n"
 
     if os.path.exists(dst):
@@ -91,7 +96,7 @@ def install_service(
             if f.read().strip() == content.strip():
                 if not quiet:
                     print(f"Service {service_name} is identical. Skipping update.")
-                return True
+                return False
 
     print(f"Creating {service_name} at {dst}...")
     try:
@@ -114,17 +119,15 @@ def install_service(
         return False
 
 
-def install_sudo_exception(exception_file: str, content: str) -> None:
+def _install_sudo_exception(exception_file: str, content: str) -> bool:
     """Installs a sudoers exception if content differs or file is missing."""
     content = content.strip() + "\n"
 
     if os.path.exists(exception_file):
         with open(exception_file, "r") as f:
             if f.read().strip() == content.strip():
-                print(
-                    f"Sudoers exception {exception_file} is identical. Skipping update."
-                )
-                return
+                print(f"Sudoers exception {exception_file} is identical. Skipping update.")
+                return False
         print(f"Updating sudoers exception: {exception_file}")
         os.remove(exception_file)
     else:
@@ -135,23 +138,26 @@ def install_sudo_exception(exception_file: str, content: str) -> None:
             f.write(content)
         os.chmod(exception_file, 0o440)
         print("Sudoers exception installed successfully.")
+        return True
     except Exception as e:
         print(f"Error creating sudoers exception: {e}")
+        return False
 
 
-def uninstall_service(service_name: str) -> None:
+def _uninstall_service(service_name: str) -> bool:
     """Stops, disables, and removes a systemd service."""
-    dst = os.path.join(INSTALL_SVC, service_name)
+    dst = os.path.join(install_svc, service_name)
     if os.path.exists(dst):
         print(f"Disabling and removing {service_name}...")
-        subprocess.run(
-            ["systemctl", "disable", "--now", service_name], capture_output=True
-        )
+        subprocess.run(["systemctl", "disable", "--now", service_name], capture_output=True)
         os.remove(dst)
         subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+        return True
+    return False
 
 
-def get_actual_user() -> str | None:
-    """Detects real user even when running under sudo."""
+def _get_actual_user() -> str:
+    """Identifies the active user logged into the session."""
     sudo_user = os.environ.get("SUDO_USER")
-    return sudo_user if sudo_user else os.environ.get("USER")
+    loginctl_user = subprocess.check_output(["loginctl", "list-users", "--no-legend"], text=True).splitlines()[0].split()[1]
+    return sudo_user or loginctl_user

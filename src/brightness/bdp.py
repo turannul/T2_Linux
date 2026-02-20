@@ -12,40 +12,37 @@
 #
 #  See the LICENSE file for more details.
 
-import os
-import sys
+import argparse
+from common.t2 import _apply_brightness_percentage, _check_root, _find_device_path, _show_brightness, cRed, cReset, e_invalid_usage
 
-sys.dont_write_bytecode = True
-sys.path.append("/usr/local/sbin/common")
-
-import brightness_common
-import t2
 
 def main() -> None:
     """Controls display backlight brightness."""
-    t2.check_root()
+    _check_root()
+
+    parser = argparse.ArgumentParser(description="Controls display backlight brightness.")
+    parser.add_argument("percentage", nargs="?", help="Brightness percentage (0-100)")
+    parser.add_argument("-s", "--show", action="store_true", help="Show current brightness")
+    args = parser.parse_args()
+
     device_paths: list[str] = [
         "/sys/class/backlight/intel_backlight",
-        "/sys/class/backlight/acpi_video0",
+        "/sys/class/backlight/acpi_video0"
     ]
-    device_path = brightness_common.find_device_path(device_paths)
+    device_path = _find_device_path(device_paths)
     if not device_path:
-        print(
-            f"{brightness_common.cRed}Error: No supported display backlight found.{brightness_common.cReset}",
-            file=sys.stderr,
-        )
-        sys.exit(brightness_common.e_invalid_usage)
-    if len(sys.argv) < 2:
-        print(
-            f"{brightness_common.cYellow}Usage: {os.path.basename(sys.argv[0])} <percentage> | --show | -s{brightness_common.cReset}",
-            file=sys.stderr,
-        )
-        sys.exit(brightness_common.e_invalid_usage)
-    arg = sys.argv[1]
-    if arg == "--show" or arg == "-s":
-        brightness_common.show_brightness(device_path)
-        sys.exit(0)
-    brightness_common.apply_brightness_percentage(arg, device_path)
+        print(f"{cRed}Error: No supported display backlight found.{cReset}")
+        exit(e_invalid_usage)
+
+    if args.show:
+        _show_brightness(device_path)
+        exit(0)
+
+    if args.percentage:
+        _apply_brightness_percentage(args.percentage, device_path)
+    else:
+        parser.print_usage()
+        exit(e_invalid_usage)
 
 
 if __name__ == "__main__":

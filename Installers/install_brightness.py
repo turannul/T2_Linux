@@ -12,95 +12,83 @@
 #
 #  See the LICENSE file for more details.
 
+import argparse
 import os
-import sys
+from common.core import _check_sudo, _get_actual_user, _get_repo_root, _install_common, _install_file, _install_sudo_exception, install_bin, install_cmmn
 
-sys.dont_write_bytecode = True
-
-try:
-    import base_installer as base
-except ImportError:
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    import base_installer as base
-
-scripts: list[str] = ["brightness_common.py", "bdp.py", "bkb.py", "btb.py"]
-
+scripts: list[str] = ["bdp.py", "bkb.py", "btb.py", "__init__.py"]
 exception_file = "/etc/sudoers.d/0-brightness-control"
-
-
-def install_sudo_exception() -> None:
-    """ Manages sudoers NOPASSWD exception for brightness control. """
-    actual_user = base.get_actual_user()
-    if not actual_user:
-        print("Error: Could not determine user.")
-        return
-
-    content = ""
-    for script in scripts:
-        if script == "brightness_common.py":
-            continue
-        cmd_name = script.replace(".py", "")
-        content += f"{actual_user} ALL=NOPASSWD: {os.path.join(base.INSTALL_BIN, cmd_name)}\n"
-
-    base.install_sudo_exception(exception_file, content)
+exception_content = "{user} ALL=NOPASSWD: /usr/local/sbin/bdp, /usr/local/sbin/bkb, /usr/local/sbin/btb"
 
 
 def install() -> None:
-    """ Installs brightness tools and common library. """
-    repo_root = base.get_repo_root()
+    """Installs brightness tools and common library."""
+    repo_root = _get_repo_root()
     script_dir = os.path.join(repo_root, "src", "brightness")
     common_src_dir = os.path.join(repo_root, "src", "common")
 
-    base.install_common()
+    changed = _install_common()
 
     for script in scripts:
-        if script == "brightness_common.py":
+        if script == "__init__.py":
             src = os.path.join(common_src_dir, script)
-            dst = os.path.join(base.INSTALL_COMMON, script)
+            dst = os.path.join(install_cmmn, script)
         else:
             src = os.path.join(script_dir, script)
             dst_name = script.replace(".py", "")
-            dst = os.path.join(base.INSTALL_BIN, dst_name)
-        
-        base.install_file(src, dst)
+            dst = os.path.join(install_bin, dst_name)
 
-    install_sudo_exception()
-    print("Installation complete.")
+        if _install_file(src, dst):
+            changed = True
+
+    if _install_sudo_exception(exception_file, exception_content.format(user=_get_actual_user())):
+        changed = True
+
+    if changed:
+        print("Installation complete.")
+    else:
+        print("Nothing to update.")
 
 
 def uninstall() -> None:
-    """ Removes installed brightness tools and sudoers exception. """
+    """Removes installed brightness tools and sudoers exception."""
+    changed = False
     for script in scripts:
-        if script == "brightness_common.py":
-            dst = os.path.join(base.INSTALL_COMMON, script)
+        if script == "__init__.py":
+            dst = os.path.join(install_cmmn, script)
         else:
             dst_name = script.replace(".py", "")
-            dst = os.path.join(base.INSTALL_BIN, dst_name)
-        
+            dst = os.path.join(install_bin, dst_name)
+
         if os.path.exists(dst):
             print(f"Removing {dst}...")
             os.remove(dst)
+            changed = True
 
     if os.path.exists(exception_file):
         print(f"Removing exception file: {exception_file}")
         os.remove(exception_file)
-    print("Uninstallation complete.")
+        changed = True
+
+    if changed:
+        print("Uninstallation complete.")
+    else:
+        print("Nothing to uninstall.")
 
 
 def main() -> None:
-    """Main entry for brightness installer."""
-    base.check_sudo()
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} {{install|uninstall}}")
-        sys.exit(1)
-    action = sys.argv[1]
+    """Main entry point for brightness installer."""
+    _check_sudo()
+
+    parser = argparse.ArgumentParser(description="Installer for brightness control tools.")
+    parser.add_argument("action", choices=["install", "uninstall"], help="Action to perform")
+    args = parser.parse_args()
+
+    action = args.action
     if action == "install":
         install()
     elif action == "uninstall":
         uninstall()
-    else:
-        print(f"Usage: {sys.argv[0]} {{install|uninstall}}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

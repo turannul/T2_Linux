@@ -16,25 +16,19 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import time
-from typing import List, Pattern
-
-sys.dont_write_bytecode = True
+from common.t2 import _check_root, _execute_command, _load_module, _log_event, _setup_logging, _unload_module
+from typing import Pattern
 
 cd_sec: int = 20
 lrt: float = 0.0
-
-sys.path.append("/usr/local/sbin/common")
-import t2
-
 version = "0.2.5"
-logger = t2.setup_logging("WiFi-Guardian", level=logging.DEBUG)
+logger = _setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
 
-def _log(log_level: str, event_msg: str) -> None:
+def _log(char: str, msg: str) -> None:
     """Logs an event using the shared logger."""
-    t2.log_event(logger, log_level, event_msg)
+    _log_event(logger, char, msg)
 
 
 p_list: list[str] = [r"CMD_TRIGGER_SCAN.*error.*\(5\)", r"brcmf_msgbuf_query_dcmd", r"set wpa_auth failed", r"error \(-12\)", r"failed with error -110"]
@@ -42,22 +36,22 @@ p_list: list[str] = [r"CMD_TRIGGER_SCAN.*error.*\(5\)", r"brcmf_msgbuf_query_dcm
 
 def _unload_wifi() -> None:
     """Unloads the Wi-Fi driver."""
-    t2.unload_module("brcmfmac_wcc", logger, delay=3)
+    _unload_module("brcmfmac_wcc", logger, delay=1)
 
 
 def _load_wifi() -> None:
     """Loads the Wi-Fi driver."""
-    t2.load_module("brcmfmac_wcc", logger, delay=3)
+    _load_module("brcmfmac_wcc", logger, delay=1)
 
 
 def _unload_bt() -> None:
     """Unloads the Bluetooth driver."""
-    t2.unload_module("hci_bcm4377", logger, delay=3)
+    _unload_module("hci_bcm4377", logger, delay=1)
 
 
 def _load_bt() -> None:
     """Loads the Bluetooth driver."""
-    t2.load_module("hci_bcm4377", logger, delay=3)
+    _load_module("hci_bcm4377", logger, delay=1)
 
 
 def _unload_all() -> bool:
@@ -84,13 +78,13 @@ def _load_all() -> bool:
         return False
 
 
-def _verify_connectivity(retries: int = 3) -> bool:
+def verify_connectivity(retries: int = 3) -> bool:
     """Verifies hardware recovery via sysfs with retries."""
     _log("*", f"Verifying hardware recovery (Attempt {4 - retries}/4)...")
     wifi_ok = any(os.path.exists(f"/sys/class/net/{iface}/wireless") for iface in os.listdir("/sys/class/net"))
     bt_ok = os.path.exists("/sys/class/bluetooth/hci0")
     if wifi_ok and bt_ok:
-        t2.execute_command("notify-send 'Wi-Fi Monitor' 'Connectivity restored' --urgency=low --icon=network-wireless", as_user=True)
+        _execute_command("notify-send 'Wi-Fi Monitor' 'Connectivity restored' --urgency=low --icon=network-wireless", as_user=True)
         _log("+", "Connectivity verified: Wi-Fi and Bluetooth are active.")
         return True
     if retries > 0:
@@ -103,8 +97,8 @@ def _verify_connectivity(retries: int = 3) -> bool:
             _unload_bt()
             _load_bt()
         time.sleep(2)
-        return _verify_connectivity(retries - 1)
-    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed after multiple attempts' --urgency=critical --icon=dialog-error", as_user=True)
+        return verify_connectivity(retries - 1)
+    _execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed after multiple attempts' --urgency=critical --icon=dialog-error", as_user=True)
     if not wifi_ok:
         _log("-", "Verification failed: No Wi-Fi interface found in sysfs.")
     if not bt_ok:
@@ -119,14 +113,14 @@ def _reset_sequence() -> bool:
     if n - lrt < cd_sec:
         _log("#", f"Cooldown active ({int(cd_sec - (n - lrt))}s remaining), skipping reset.")
         return False
-    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Reset sequence started' --urgency=normal --icon=view-refresh", as_user=True)
+    _execute_command("notify-send 'Wi-Fi Monitor' 'Reset sequence started' --urgency=normal --icon=view-refresh", as_user=True)
     if _unload_all():
         _log("*", "Hardware settling (5s)...")
         time.sleep(5)
         if _load_all():
             _log("*", "Waiting for hardware initialization (5s)...")
             time.sleep(5)
-            if _verify_connectivity(retries=3):
+            if verify_connectivity(retries=3):
                 lrt = time.time()
                 return True
             else:
@@ -135,7 +129,7 @@ def _reset_sequence() -> bool:
 
 
 def al_is_watching() -> None:
-    """ Monitors journalctl for hardware hang signatures. """
+    """Monitors journalctl for hardware hang signatures."""
     _log("+", "Starting WiFi Guardian Monitor...")
     compiled_p_list: list[Pattern[str]] = [re.compile(p, re.IGNORECASE) for p in p_list]
     try:
@@ -149,7 +143,7 @@ def al_is_watching() -> None:
             for pattern in compiled_p_list:
                 if pattern.search(line):
                     _log("-", f"Reset trigger: {line.strip()} (Pattern: {pattern.pattern})")
-                    t2.execute_command("notify-send 'Wi-Fi Monitor' 'Hardware hang detected' --urgency=critical --icon=dialog-error", as_user=True)
+                    _execute_command("notify-send 'Wi-Fi Monitor' 'Hardware hang detected' --urgency=critical --icon=dialog-error", as_user=True)
                     _reset_sequence()
                     _log("+", "Reset sequence completed, monitoring for stability...")
                     break
@@ -160,16 +154,18 @@ def al_is_watching() -> None:
 
 
 def main() -> None:
-    """ Main entry point for the WiFi monitor. """
-    t2.check_root()
+    """Main entry point for the WiFi monitor."""
+    _check_root()
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["exec", "daemon", "version", "v"])
+    parser.add_argument("action", choices=["exec", "check", "daemon", "version", "v"])
     args = parser.parse_args()
     if args.action in ["version", "v"]:
         print(version)
     if args.action == "exec":
-        t2.execute_command("notify-send 'Wi-Fi Monitor' 'Manual reset triggered' --urgency=normal --icon=view-refresh", as_user=True)
+        _execute_command("notify-send 'Wi-Fi Monitor' 'Manual reset triggered' --urgency=normal --icon=view-refresh", as_user=True)
         _reset_sequence()
+    if args.action == "check":
+        verify_connectivity()
     if args.action == "daemon":
         al_is_watching()
 
