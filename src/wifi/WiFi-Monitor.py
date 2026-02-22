@@ -22,7 +22,7 @@ from typing import Pattern
 
 cd_sec: int = 20
 lrt: float = 0.0
-version = "0.2.5"
+version = "0.3.2"
 logger = _setup_logging("WiFi-Guardian", level=logging.DEBUG)
 
 
@@ -31,7 +31,7 @@ def _log(char: str, msg: str) -> None:
     _log_event(logger, char, msg)
 
 
-p_list: list[str] = [r"CMD_TRIGGER_SCAN.*error.*\(5\)", r"brcmf_msgbuf_query_dcmd", r"set wpa_auth failed", r"error \(-12\)", r"failed with error -110"]
+p_list: list[str] = [r"CMD_TRIGGER_SCAN.*error.*\(5\)", r"brcmf_msgbuf_query_dcmd", r"set wpa_auth failed", r"error \(-12\)"]
 
 
 def _unload_wifi() -> None:
@@ -78,31 +78,35 @@ def _load_all() -> bool:
         return False
 
 
-def verify_connectivity(retries: int = 3) -> bool:
+def verify_connectivity(max_attempts: int = 3) -> bool:
     """Verifies hardware recovery via sysfs with retries."""
-    _log("*", f"Verifying hardware recovery (Attempt {4 - retries}/4)...")
-    wifi_ok = any(os.path.exists(f"/sys/class/net/{iface}/wireless") for iface in os.listdir("/sys/class/net"))
-    bt_ok = os.path.exists("/sys/class/bluetooth/hci0")
-    if wifi_ok and bt_ok:
-        _execute_command("notify-send 'Wi-Fi Monitor' 'Connectivity restored' --urgency=low --icon=network-wireless", as_user=True)
-        _log("+", "Connectivity verified: Wi-Fi and Bluetooth are active.")
-        return True
-    if retries > 0:
-        if not wifi_ok:
-            _log("!", "Wi-Fi missing. Retrying Wi-Fi reload...")
-            _unload_wifi()
-            _load_wifi()
-        if not bt_ok:
-            _log("!", "Bluetooth missing. Retrying BT reload...")
-            _unload_bt()
-            _load_bt()
-        time.sleep(2)
-        return verify_connectivity(retries - 1)
-    _execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed after multiple attempts' --urgency=critical --icon=dialog-error", as_user=True)
+    wifi_ok, bt_ok = False, False
+    for attempt in range(1, max_attempts + 1):
+        _log("*", f"Verifying hardware recovery (Attempt {attempt}/{max_attempts})...")
+        try:
+            wifi_ok: bool = any(os.path.exists(f"/sys/class/net/{iface}/wireless") for iface in os.listdir("/sys/class/net"))
+        except FileNotFoundError:
+            wifi_ok = False
+        bt_ok: bool = os.path.exists("/sys/class/bluetooth/hci0")
+        if wifi_ok and bt_ok:
+            _execute_command("notify-send 'Wi-Fi Monitor' 'No hardware issue(s) found.' --urgency=low --icon=network-wireless", as_user=True)
+            _log("+", "Connectivity verified.")
+            return True
+        if attempt < max_attempts:
+            if not wifi_ok:
+                _log("!", "Wi-Fi missing, reloading...")
+                _unload_wifi()
+                _load_wifi()
+            if not bt_ok:
+                _log("!", "Bluetooth missing, reloading...")
+                _unload_bt()
+                _load_bt()
+            time.sleep(2)
     if not wifi_ok:
-        _log("-", "Verification failed: No Wi-Fi interface found in sysfs.")
+        _log("-", "WiFi Controller is missing.")
     if not bt_ok:
-        _log("-", "Verification failed: Bluetooth controller hci0 missing in sysfs.")
+        _log("-", "Bluetooth Controller is missing.")
+    _execute_command("notify-send 'Wi-Fi Monitor' 'Recovery failed' --urgency=critical --icon=dialog-error", as_user=True)
     return False
 
 
@@ -113,18 +117,17 @@ def _reset_sequence() -> bool:
     if n - lrt < cd_sec:
         _log("#", f"Cooldown active ({int(cd_sec - (n - lrt))}s remaining), skipping reset.")
         return False
-    _execute_command("notify-send 'Wi-Fi Monitor' 'Reset sequence started' --urgency=normal --icon=view-refresh", as_user=True)
     if _unload_all():
-        _log("*", "Hardware settling (5s)...")
-        time.sleep(5)
+        _log("*", "Hardware settling (2s)...")
+        time.sleep(2.5)
         if _load_all():
-            _log("*", "Waiting for hardware initialization (5s)...")
-            time.sleep(5)
-            if verify_connectivity(retries=3):
+            _log("*", "Waiting for hardware initialization (2s)...")
+            time.sleep(2.5)
+            if verify_connectivity(5):
                 lrt = time.time()
                 return True
             else:
-                _log("!", "Post-reset verification failed after retries. Recovery may be incomplete.")
+                _log("!", "Post-reset verification failed after retries. Recovery likely failed :(")
     return False
 
 
@@ -143,9 +146,8 @@ def al_is_watching() -> None:
             for pattern in compiled_p_list:
                 if pattern.search(line):
                     _log("-", f"Reset trigger: {line.strip()} (Pattern: {pattern.pattern})")
-                    _execute_command("notify-send 'Wi-Fi Monitor' 'Hardware hang detected' --urgency=critical --icon=dialog-error", as_user=True)
+                    _execute_command("notify-send 'Wi-Fi Monitor' 'Hang detected' --urgency=critical --icon=dialog-error", as_user=True)
                     _reset_sequence()
-                    _log("+", "Reset sequence completed, monitoring for stability...")
                     break
     except PermissionError:
         _log("-", "Error: Permission denied. Run as root?")
@@ -162,7 +164,6 @@ def main() -> None:
     if args.action in ["version", "v"]:
         print(version)
     if args.action == "exec":
-        _execute_command("notify-send 'Wi-Fi Monitor' 'Manual reset triggered' --urgency=normal --icon=view-refresh", as_user=True)
         _reset_sequence()
     if args.action == "check":
         verify_connectivity()

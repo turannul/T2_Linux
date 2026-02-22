@@ -49,7 +49,7 @@ def load_sequence() -> None:
     """Executes the driver load sequence after resume."""
     _execute_command("notify-send 'Suspend Fix' 'Executing LOAD sequence' --urgency=normal --icon=view-refresh", as_user=True)
     _log("*", "Executing LOAD sequence...")
-    _load_module("apple-bce", logger, delay=4)
+    _load_module("apple-bce", logger, delay=3)
     _load_module("hid_appletb_bl", logger)
     _load_module("hid_appletb_kbd", logger)
     _load_module("appletbdrm", logger)
@@ -77,9 +77,9 @@ def unload_sequence() -> None:
     _unload_module("appletbdrm", logger)
     _unload_module("hid_appletb_bl", logger)
     _unload_module("hid_appletb_kbd", logger)
-    _unload_module("hci_bcm4377", logger, delay=2)
-    _unload_module("brcmfmac_wcc", logger, delay=2)
-    _unload_module("apple-bce", logger, delay=4)
+    _unload_module("hci_bcm4377", logger, delay=1)
+    _unload_module("brcmfmac_wcc", logger, delay=1)
+    _unload_module("apple-bce", logger, delay=3)
     _log("*", "UNLOAD sequence complete.")
 
 

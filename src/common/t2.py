@@ -102,7 +102,7 @@ def _execute_command(cmd: str, as_user: bool = False, env: Optional[Dict[str, st
         uid, user = _get_active_user()
         user_env = _get_user_env(uid)
         target_env.update(user_env)
-        cmd = f"sudo -E -u {user} {cmd}"
+        cmd = f"sudo -E -n -u {user} {cmd}"
     try:
         proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, executable="/bin/zsh", env=target_env, text=True)
         stdout = proc.stdout.strip() if proc.stdout else ""

@@ -16,7 +16,7 @@ import argparse
 import os
 from common.core import _check_sudo, _get_actual_user, _get_repo_root, _install_common, _install_file, _install_sudo_exception, install_bin, install_cmmn
 
-scripts: list[str] = ["bdp.py", "bkb.py", "btb.py", "__init__.py"]
+scripts: list[str] = ["bdp.py", "bkb.py", "btb.py"]
 exception_file = "/etc/sudoers.d/0-brightness-control"
 exception_content = "{user} ALL=NOPASSWD: /usr/local/sbin/bdp, /usr/local/sbin/bkb, /usr/local/sbin/btb"
 
